@@ -39,9 +39,21 @@ logger = logging.getLogger(__name__)
 # Por defecto no resuelve música (se implementará junto al endpoint POST /musica).
 ResolverMusica = Callable[[Optional[str]], Optional[str]]
 
+# Resolutor de la ruta de archivo de un clip a partir de su ``clip_id``. El
+# ``Orden_de_Clips`` de un Job contiene identificadores de clip, pero el pipeline
+# (paso UNIR → ``ffprobe``) necesita **rutas** reales. Por defecto es la identidad
+# (devuelve el id tal cual) para no romper los tests que usan ids ficticios sin
+# archivos en disco; en producción se inyecta un resolutor que hace glob sobre el
+# almacén de clips.
+ResolverClip = Callable[[str], str]
+
 
 def _sin_musica(_musica_id: Optional[str]) -> Optional[str]:
     return None
+
+
+def _identidad_clip(clip_id: str) -> str:
+    return clip_id
 
 
 class JobRunner:
@@ -53,6 +65,7 @@ class JobRunner:
         *,
         runner: Runner = ejecutar_comando,
         resolver_musica: ResolverMusica = _sin_musica,
+        resolver_clip: ResolverClip = _identidad_clip,
         **inyecciones_pipeline: Any,
     ) -> None:
         """Crea el ejecutor.
@@ -61,6 +74,11 @@ class JobRunner:
             manager: Gestor de Jobs (fuente de verdad del estado/progreso).
             runner: Ejecutor de comandos externos inyectable.
             resolver_musica: Función que traduce ``musica_id`` a ruta de WAV.
+            resolver_clip: Función que traduce cada ``clip_id`` del
+                ``Orden_de_Clips`` a la **ruta** de archivo del clip almacenado.
+                Por defecto es la identidad (devuelve el id) para no romper los
+                tests que usan ids ficticios; en producción se inyecta un
+                resolutor que hace glob sobre el almacén de clips.
             **inyecciones_pipeline: Pasos inyectables reenviados a
                 :func:`ejecutar_pipeline` (``fn_unir``, ``fn_cortar``, ...),
                 útiles en pruebas.
@@ -68,6 +86,7 @@ class JobRunner:
         self.manager = manager
         self.runner = runner
         self.resolver_musica = resolver_musica
+        self.resolver_clip = resolver_clip
         self._inyecciones = inyecciones_pipeline
 
     def _crear_reporter(self, job_id: str) -> ReporteProgreso:
@@ -108,11 +127,18 @@ class JobRunner:
         reporter = self._crear_reporter(job_id)
         musica_wav = self.resolver_musica(job_state.musica_id)
 
+        # El ``Orden_de_Clips`` almacenado contiene identificadores de clip; el
+        # pipeline (paso UNIR → ``ffprobe``) necesita RUTAS de archivo reales, así
+        # que se resuelve cada id a su ruta antes de ejecutar (BUG: se pasaban ids
+        # y ``ffprobe`` fallaba con "No such file or directory"). Con el resolutor
+        # por defecto (identidad) el comportamiento no cambia para los tests.
+        orden_rutas = [self.resolver_clip(cid) for cid in job_state.orden_clips]
+
         resultado: ResultadoPipeline
         try:
             resultado = ejecutar_pipeline(
                 job_wd,
-                job_state.orden_clips,
+                orden_rutas,
                 job_state.ajustes,
                 musica_wav=musica_wav,
                 reporter=reporter,
@@ -164,4 +190,4 @@ class JobRunner:
         return loop.run_in_executor(None, self.ejecutar_job, job_id)
 
 
-__all__ = ["JobRunner", "ResolverMusica"]
+__all__ = ["JobRunner", "ResolverMusica", "ResolverClip"]

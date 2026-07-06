@@ -17,6 +17,7 @@ Referencias de requisitos: 8.1, 8.2.
 
 from __future__ import annotations
 
+import logging
 import os
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import JSONResponse
@@ -25,7 +26,15 @@ from app import config
 from app.models.errors import error_envelope
 from app.storage.music_store import MusicStore, MusicStorageError
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["musica"])
+
+# Firmas de cabecera aceptadas para la familia WAV/RIFF. Además del ``RIFF``
+# canónico se admite ``RF64``, la variante para archivos de audio grandes (> 4 GB)
+# que también usa el contenedor WAVE y que algunos editores generan: antes se
+# rechazaba como "WAV inválido" pese a reproducirse correctamente.
+_FIRMAS_WAV = {b"RIFF", b"RF64"}
 
 _music_store = MusicStore()
 
@@ -38,16 +47,30 @@ def obtener_music_store() -> MusicStore:
 def _es_wav_valido(nombre: str, contenido: bytes) -> bool:
     """Comprueba que el archivo sea un WAV válido (extensión + cabecera RIFF/WAVE).
 
-    Un WAV canónico comienza con la firma ``RIFF`` (bytes 0..4), seguida del
-    tamaño y la firma ``WAVE`` (bytes 8..12). Se validan ambos para rechazar
-    archivos con extensión ``.wav`` pero contenido no-WAV (Req 8.2).
+    Un WAV comienza con una firma de contenedor (bytes 0..4) —``RIFF`` en el caso
+    canónico o ``RF64`` para archivos grandes (> 4 GB)— seguida del tamaño y la
+    firma de formato ``WAVE`` (bytes 8..12). Se aceptan ambas firmas de la familia
+    RIFF/RF64 y se exige la extensión ``.wav`` para rechazar archivos con
+    contenido no-WAV (Req 8.2).
+
+    Cuando se rechaza por cabecera, se registra el nombre, el tamaño y los primeros
+    12 bytes para poder diagnosticar futuros falsos negativos.
     """
     ext = os.path.splitext(nombre or "")[1].lower()
     if ext not in config.SUPPORTED_MUSIC_EXTENSIONS:
+        logger.warning(
+            "Rechazado WAV %s: extensión %r no soportada", nombre, ext
+        )
         return False
-    if len(contenido) < 12:
+    if len(contenido) < 12 or contenido[0:4] not in _FIRMAS_WAV or contenido[8:12] != b"WAVE":
+        logger.warning(
+            "Rechazado WAV %s (%d bytes): cabecera=%r",
+            nombre,
+            len(contenido),
+            contenido[:12],
+        )
         return False
-    return contenido[0:4] == b"RIFF" and contenido[8:12] == b"WAVE"
+    return True
 
 
 @router.post("/musica")

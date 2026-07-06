@@ -38,6 +38,7 @@ from app.jobs.manager import JobManager, gestor_jobs
 from app.jobs.runner import JobRunner
 from app.models.errors import error_envelope
 from app.models.settings import Ajustes, validar_ajustes
+from app.storage.clip_store import ClipStore
 from app.storage.music_store import MusicStore
 from app.storage.workdir import JobWorkdir
 
@@ -63,10 +64,36 @@ def _resolver_musica_por_id(musica_id: Optional[str]) -> Optional[str]:
     return str(coincidencias[0]) if coincidencias else None
 
 
+def _resolver_clip_por_id(clip_id: str) -> Optional[str]:
+    """Traduce un ``clip_id`` a la ruta del clip de video almacenado, o ``None``.
+
+    Los clips recibidos por ``POST /clips`` se persisten en el directorio base del
+    :class:`ClipStore` con nombre ``{clip_id}{ext}`` (ver
+    :mod:`app.storage.clip_store`). El ``Orden_de_Clips`` de ``POST /procesar``,
+    en cambio, contiene **identificadores** de clip, no rutas. El pipeline (paso
+    UNIR → ``ffprobe``) necesita rutas de archivo reales, así que aquí se resuelve
+    el id a la ruta almacenada haciendo glob por ``{clip_id}.*`` (BUG: el pipeline
+    recibía ids en vez de rutas y ``ffprobe`` fallaba con "No such file").
+
+    Devuelve la ruta del archivo si existe, o ``None`` si no se encuentra.
+    """
+    if not clip_id:
+        return None
+    base = ClipStore().base_dir
+    if not base.exists():
+        return None
+    coincidencias = sorted(base.glob(f"{clip_id}.*"))
+    return str(coincidencias[0]) if coincidencias else None
+
+
 # Ejecutor compartido, cableado con el Gestor de Jobs por defecto de la app y con
-# el resolutor de música. En pruebas se sustituye por un runner con pasos
-# mockeados vía ``app.dependency_overrides[obtener_job_runner]``.
-_job_runner = JobRunner(gestor_jobs, resolver_musica=_resolver_musica_por_id)
+# los resolutores de música y de clips. En pruebas se sustituye por un runner con
+# pasos mockeados vía ``app.dependency_overrides[obtener_job_runner]``.
+_job_runner = JobRunner(
+    gestor_jobs,
+    resolver_musica=_resolver_musica_por_id,
+    resolver_clip=(lambda cid: _resolver_clip_por_id(cid) or cid),
+)
 
 
 def obtener_gestor_jobs() -> JobManager:
