@@ -3,10 +3,16 @@
 Este módulo comprueba, al arrancar el Backend, la disponibilidad de las
 herramientas externas que necesita el Motor de Procesamiento:
 
-* ``ffmpeg``, ``ffprobe`` y ``auto-editor``: se comprueban ejecutando
-  ``--version`` mediante :mod:`subprocess` con un timeout individual.
+* ``ffmpeg``, ``ffprobe`` y ``auto-editor``: se comprueban localizando el
+  ejecutable en el ``PATH`` con :func:`shutil.which` (instantáneo, sin ejecutar
+  ``--version``, evitando así el coste de arranque de herramientas lentas).
 * ``faster-whisper``: se comprueba la **importabilidad** del módulo
   (``import faster_whisper``) sin cargar ningún modelo.
+
+Antes de resolver los binarios se asegura que el ``PATH`` del proceso incluya
+las rutas de Homebrew/macOS (:func:`app.deps.path_setup.asegurar_path_local`),
+de modo que los binarios instalados con ``brew`` se encuentren aunque el backend
+se haya lanzado desde la GUI (doble clic).
 
 Reglas (Req 12.1-12.5):
 
@@ -32,12 +38,14 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Mapping, Optional
 
 from app import config
+from app.deps.path_setup import asegurar_path_local
 
 logger = logging.getLogger(__name__)
 
@@ -130,23 +138,22 @@ class ResultadoVerificacion:
 # Comprobadores por defecto (dependen de los binarios/paquetes reales)
 # ---------------------------------------------------------------------------
 def comprobar_binario(comando: str) -> Comprobador:
-    """Crea un comprobador que ejecuta ``<comando> --version`` con timeout.
+    """Crea un comprobador que localiza ``comando`` en el ``PATH`` con ``shutil.which``.
 
-    La dependencia se considera disponible si el proceso termina con código de
-    salida ``0`` dentro del plazo. Si el binario no existe se considera **no
-    disponible**; si el proceso excede el timeout se propaga
-    ``subprocess.TimeoutExpired`` para que la capa superior lo trate como **no
-    verificable** (Req 12.3).
+    La comprobación es **instantánea**: no ejecuta el binario (evita el coste de
+    arranque de herramientas lentas como ``auto-editor``, que tardaba ~10 s en
+    responder a ``--version`` y agotaba el presupuesto total de verificación).
+    La dependencia se considera **disponible** si :func:`shutil.which` encuentra
+    el ejecutable en el ``PATH``; en caso contrario, **no disponible**.
+
+    Se conserva el parámetro ``timeout`` para respetar la firma
+    :data:`Comprobador` (los comprobadores inyectados en los tests pueden seguir
+    simulando timeouts), pero al no lanzar ningún ``subprocess`` este comprobador
+    nunca lo agota.
     """
 
-    def _comprobar(timeout: float) -> bool:
-        proceso = subprocess.run(  # noqa: S603 - comando fijo, sin entrada del usuario
-            [comando, "--version"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=timeout,
-        )
-        return proceso.returncode == 0
+    def _comprobar(_timeout: float) -> bool:
+        return shutil.which(comando) is not None
 
     return _comprobar
 
@@ -206,6 +213,10 @@ def verificar_dependencias(
         :class:`ResultadoVerificacion` con el detalle por dependencia y la
         decisión de bloqueo del arranque.
     """
+    # Asegura que el PATH incluya las rutas de Homebrew/macOS antes de resolver
+    # los binarios (por si se invoca sin pasar por main.py). Idempotente.
+    asegurar_path_local()
+
     if comprobadores is None:
         comprobadores = _comprobadores_por_defecto()
     if timeout_total is None:

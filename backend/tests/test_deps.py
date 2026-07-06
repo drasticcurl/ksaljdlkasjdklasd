@@ -18,7 +18,9 @@ ffprobe / auto-editor ni del paquete faster-whisper instalado).
 
 from __future__ import annotations
 
+import os
 import subprocess
+import time
 from typing import Dict, List, Set
 
 from hypothesis import given, settings
@@ -33,6 +35,7 @@ from app.deps.checker import (
     comprobar_binario,
     verificar_dependencias,
 )
+from app.deps.path_setup import RUTAS_LOCALES_MACOS, asegurar_path_local
 
 # Mínimo 100 iteraciones por propiedad.
 PBT = settings(max_examples=150, deadline=None)
@@ -206,3 +209,95 @@ def test_comprobar_binario_detecta_ejecutable_ausente() -> None:
     # Ejecutable ausente es "no disponible" pero sí verificable (no es timeout).
     assert ffmpeg.verificable is True
     assert "ffmpeg" in resultado.faltantes
+
+
+
+# ---------------------------------------------------------------------------
+# Bugfix: comprobador por defecto basado en shutil.which (unit)
+# Validates: Req 12.1, 12.5 (detección fiable y rápida sin ejecutar --version)
+# ---------------------------------------------------------------------------
+def test_comprobador_por_defecto_usa_shutil_which_presente(monkeypatch) -> None:
+    """El comprobador por defecto marca un binario como disponible cuando
+    ``shutil.which`` devuelve una ruta (sin ejecutar el binario)."""
+    monkeypatch.setattr(
+        "app.deps.checker.shutil.which",
+        lambda cmd: f"/opt/homebrew/bin/{cmd}",
+    )
+
+    comprobar = comprobar_binario("ffmpeg")
+    assert comprobar(0.0) is True
+
+
+def test_comprobador_por_defecto_usa_shutil_which_ausente(monkeypatch) -> None:
+    """El comprobador por defecto marca un binario como no disponible cuando
+    ``shutil.which`` devuelve ``None``."""
+    monkeypatch.setattr("app.deps.checker.shutil.which", lambda cmd: None)
+
+    comprobar = comprobar_binario("ffmpeg")
+    assert comprobar(0.0) is False
+
+
+def test_verificacion_completa_rapida_con_which(monkeypatch) -> None:
+    """Con los comprobadores por defecto (which + find_spec), la verificación
+    completa es prácticamente instantánea y NO agota el presupuesto de 10 s."""
+    # ffmpeg/ffprobe/auto-editor -> presentes vía which; faster_whisper -> import.
+    monkeypatch.setattr(
+        "app.deps.checker.shutil.which",
+        lambda cmd: f"/usr/local/bin/{cmd}",
+    )
+    monkeypatch.setattr(
+        "app.deps.checker.importlib.util.find_spec",
+        lambda modulo: object(),
+    )
+
+    inicio = time.monotonic()
+    resultado = verificar_dependencias()  # usa comprobadores por defecto
+    transcurrido = time.monotonic() - inicio
+
+    assert resultado.ok is True
+    assert resultado.faltantes == []
+    # Muy por debajo del presupuesto total (10 s): la detección es instantánea.
+    assert transcurrido < 1.0
+
+
+# ---------------------------------------------------------------------------
+# Bugfix: ajuste del PATH de Homebrew/macOS (unit)
+# Validates: los binarios de Homebrew se localizan al arrancar desde la GUI.
+# ---------------------------------------------------------------------------
+def test_asegurar_path_local_agrega_rutas_homebrew(monkeypatch) -> None:
+    """Tras ``asegurar_path_local()``, el PATH contiene las rutas de Homebrew."""
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    asegurar_path_local()
+
+    entradas = os.environ["PATH"].split(os.pathsep)
+    assert "/opt/homebrew/bin" in entradas
+    assert "/usr/local/bin" in entradas
+    # Las rutas preexistentes se conservan.
+    assert "/usr/bin" in entradas
+    assert "/bin" in entradas
+
+
+def test_asegurar_path_local_es_idempotente(monkeypatch) -> None:
+    """Llamar dos veces no duplica las rutas añadidas (idempotencia)."""
+    monkeypatch.setenv("PATH", "/usr/bin")
+
+    asegurar_path_local()
+    primero = os.environ["PATH"]
+    asegurar_path_local()
+    segundo = os.environ["PATH"]
+
+    assert primero == segundo
+    for ruta in RUTAS_LOCALES_MACOS:
+        assert primero.split(os.pathsep).count(ruta) == 1
+
+
+def test_asegurar_path_local_no_falla_con_path_vacio(monkeypatch) -> None:
+    """No falla si ``PATH`` no está definido o está vacío."""
+    monkeypatch.delenv("PATH", raising=False)
+
+    resultado = asegurar_path_local()
+
+    entradas = resultado.split(os.pathsep)
+    for ruta in RUTAS_LOCALES_MACOS:
+        assert ruta in entradas
