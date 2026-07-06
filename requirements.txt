@@ -1,0 +1,12 @@
+# requirements.txt en la raíz del proyecto (Req 14.5).
+#
+# El requisito 14.5 exige un `requirements.txt` en la raíz del proyecto que
+# declare como mínimo fastapi, uvicorn, auto-editor, faster-whisper y
+# python-multipart. El archivo canónico de dependencias de Python vive en
+# `backend/requirements.txt`; este archivo raíz lo referencia para mantener una
+# única fuente de verdad y satisfacer literalmente el criterio de aceptación.
+#
+# Uso: `pip install -r requirements.txt` desde la raíz instala las dependencias
+# declaradas en backend/requirements.txt.
+
+-r backend/requirements.txt
