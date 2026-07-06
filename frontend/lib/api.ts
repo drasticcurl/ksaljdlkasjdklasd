@@ -100,20 +100,28 @@ async function parseJsonOrThrow<T>(res: Response): Promise<T> {
   }
 
   if (esApiErrorBody(body)) {
-    throw new ApiError(
+    const apiError = new ApiError(
       body.error.code,
       body.error.message,
       res.status,
       body.error.details ?? null,
     );
+    console.error(
+      `[api] Error de API (${apiError.status}) ${apiError.code}: ${apiError.message}`,
+    );
+    throw apiError;
   }
 
-  throw new ApiError(
+  const httpError = new ApiError(
     'HTTP_ERROR',
     `La petición falló con estado ${res.status}.`,
     res.status,
     null,
   );
+  console.error(
+    `[api] Error HTTP (${httpError.status}) ${httpError.code}: ${httpError.message}`,
+  );
+  throw httpError;
 }
 
 /**
@@ -142,11 +150,15 @@ async function fetchConTimeout(
     timer = setTimeout(() => controller.abort(), timeoutMs);
   }
 
+  // Diagnóstico: registra el método y la URL al iniciar la petición.
+  const metodo = (init.method ?? 'GET').toUpperCase();
+  console.info(`[api] ${metodo} ${url}`);
+
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } catch (err) {
     if (controller.signal.aborted && timeoutMs && timeoutMs > 0) {
-      throw new ApiError(
+      const timeoutError = new ApiError(
         CLIENT_ERROR_CODES.TIMEOUT,
         `La petición excedió el tiempo límite de ${Math.round(
           timeoutMs / 1000,
@@ -154,13 +166,21 @@ async function fetchConTimeout(
         0,
         null,
       );
+      console.error(
+        `[api] Timeout ${timeoutError.code} en ${metodo} ${url}: ${timeoutError.message}`,
+      );
+      throw timeoutError;
     }
-    throw new ApiError(
+    const networkError = new ApiError(
       CLIENT_ERROR_CODES.NETWORK,
       err instanceof Error ? err.message : 'Error de red desconocido.',
       0,
       null,
     );
+    console.error(
+      `[api] Error de red ${networkError.code} en ${metodo} ${url}: ${networkError.message}`,
+    );
+    throw networkError;
   } finally {
     if (timer) clearTimeout(timer);
   }

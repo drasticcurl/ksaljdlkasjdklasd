@@ -240,3 +240,63 @@ def test_backend_no_requiere_claves_de_api_para_importarse():
         "El backend no debe depender de claves de API/tokens externos; "
         f"referencias encontradas en: {ofensores}"
     )
+
+
+
+# ---------------------------------------------------------------------------
+# CORS (bugfix): el navegador (frontend en :3000) debe poder llamar al backend
+# (:8000). Sin CORS el navegador bloquea la respuesta -> "Failed to fetch".
+# ---------------------------------------------------------------------------
+def _cliente_con_deps_ok():
+    """Devuelve un ``TestClient`` con la verificación de dependencias mockeada
+    para que el arranque no aborte en el sandbox (sin ffmpeg/auto-editor)."""
+    from fastapi.testclient import TestClient
+
+    import main
+    from app.deps import checker as _deps_checker
+
+    def _verificacion_ok(*_args, **_kwargs):
+        return _deps_checker.ResultadoVerificacion(
+            resultados=[
+                _deps_checker.ResultadoDependencia(nombre=n, disponible=True)
+                for n in _deps_checker.DEPENDENCIAS
+            ]
+        )
+
+    main.verificar_dependencias = _verificacion_ok  # type: ignore[assignment]
+    return TestClient(main.app)
+
+
+def test_cors_permite_origen_del_frontend():
+    """Una petición con ``Origin: http://localhost:3000`` recibe el header
+    ``access-control-allow-origin`` correspondiente (Req: CORS del bugfix)."""
+    cliente = _cliente_con_deps_ok()
+    respuesta = cliente.get("/salud", headers={"Origin": "http://localhost:3000"})
+
+    assert respuesta.status_code == 200
+    assert (
+        respuesta.headers.get("access-control-allow-origin")
+        == "http://localhost:3000"
+    )
+
+
+def test_cors_preflight_options_en_clips():
+    """Un preflight ``OPTIONS`` a ``/clips`` responde con los headers CORS que
+    permiten al navegador continuar con la petición real."""
+    cliente = _cliente_con_deps_ok()
+    respuesta = cliente.options(
+        "/clips",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+
+    assert respuesta.status_code in (200, 204)
+    assert (
+        respuesta.headers.get("access-control-allow-origin")
+        == "http://localhost:3000"
+    )
+    allow_methods = respuesta.headers.get("access-control-allow-methods", "")
+    assert "POST" in allow_methods or "*" in allow_methods
