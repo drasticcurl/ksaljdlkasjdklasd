@@ -169,6 +169,61 @@ desarrollador no identificado". Para permitirlo:
 
 Solo hace falta hacerlo una vez por script.
 
+## Solución de problemas
+
+### El backend aborta con "faltan dependencias"
+
+Si al arrancar el backend ves un mensaje indicando que faltan `ffmpeg`,
+`ffprobe`, `auto-editor` o `faster-whisper`, instala lo que corresponda:
+
+- **`ffmpeg` / `ffprobe`**: son binarios del sistema. Instálalos con Homebrew:
+
+  ```bash
+  brew install ffmpeg
+  ```
+
+- **`auto-editor` / `faster-whisper`**: son dependencias de Python. Instálalas
+  (dentro de tu entorno virtual) desde `requirements.txt`:
+
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+  (`requirements.txt` ya incluye `auto-editor` y `faster-whisper`.)
+
+### El PATH de Homebrew al arrancar con doble clic
+
+Al arrancar desde Finder (doble clic en un `.command`) o desde algunos entornos
+virtuales, el `PATH` puede no incluir las rutas de Homebrew
+(`/opt/homebrew/bin` en Apple Silicon, `/usr/local/bin` en Intel), y entonces
+`ffmpeg`/`ffprobe` no se encontrarían aunque estén instalados. El backend
+**añade automáticamente** esas rutas al `PATH` al arrancar, así que no necesitas
+configurar nada manualmente; solo asegúrate de que los binarios estén realmente
+instalados.
+
+### "Failed to fetch" en el navegador
+
+Si la Interfaz muestra el error **"Failed to fetch"**, casi siempre significa
+una de dos cosas:
+
+1. **El backend no está arrancado** (o se detuvo por dependencias faltantes).
+   Revisa la terminal del backend y arráncalo en `localhost:8000`.
+2. Un **problema de CORS** entre el frontend (`:3000`) y el backend (`:8000`).
+   El backend ya habilita CORS para `http://localhost:3000` y
+   `http://127.0.0.1:3000` (configurable con la variable de entorno
+   `VSE_CORS_ORIGINS`, orígenes separados por comas), por lo que esto no debería
+   ocurrir con la configuración por defecto.
+
+### Comprobar que el backend está vivo
+
+Abre en el navegador (o con `curl`) el endpoint de salud:
+
+```
+http://localhost:8000/salud
+```
+
+Debe responder `{"estado": "ok"}`. Si no responde, el backend no está arrancado.
+
 ## Notas
 
 - No se establece ninguna conexión de red saliente hacia servicios externos ni

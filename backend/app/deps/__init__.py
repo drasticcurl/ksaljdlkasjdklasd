@@ -14,11 +14,13 @@ from app.deps.checker import (
     ResultadoVerificacion,
     verificar_dependencias,
 )
+from app.deps.path_setup import asegurar_path_local
 
 __all__ = [
     "DEPENDENCIAS",
     "DependenciasFaltantesError",
     "ResultadoDependencia",
     "ResultadoVerificacion",
+    "asegurar_path_local",
     "verificar_dependencias",
 ]

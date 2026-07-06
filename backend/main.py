@@ -29,20 +29,56 @@ Referencias de requisitos: 12.4, 12.5, 14.5, 14.6.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import AsyncIterator, List
 
-from fastapi import FastAPI
+# IMPORTANTE: ajustar el PATH del proceso ANTES de importar/usar cualquier cosa
+# que resuelva binarios externos (ffmpeg, ffprobe, auto-editor). Al lanzarse
+# desde la GUI (doble clic) el PATH de Homebrew puede no estar presente; esto lo
+# corrige de forma idempotente para que tanto la verificación de dependencias
+# como los subprocess posteriores hereden el PATH correcto.
+from app.deps import asegurar_path_local
 
-from app import config
-from app.api import clips as clips_router
-from app.api import download as download_router
-from app.api import music as music_router
-from app.api import process as process_router
-from app.api import progress as progress_router
-from app.deps import DependenciasFaltantesError, verificar_dependencias
+asegurar_path_local()
+
+from fastapi import FastAPI, Request  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+from app import config  # noqa: E402
+from app.api import clips as clips_router  # noqa: E402
+from app.api import download as download_router  # noqa: E402
+from app.api import music as music_router  # noqa: E402
+from app.api import process as process_router  # noqa: E402
+from app.api import progress as progress_router  # noqa: E402
+from app.deps import DependenciasFaltantesError, verificar_dependencias  # noqa: E402
+
+# Configura el logging al importar el módulo. Solo si aún no hay handlers en el
+# root logger, para no duplicar la configuración cuando se ejecuta bajo uvicorn
+# (que instala sus propios handlers).
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+    )
 
 logger = logging.getLogger(__name__)
+
+
+def _origenes_cors() -> List[str]:
+    """Orígenes permitidos por CORS.
+
+    Por defecto permite la Interfaz local en el puerto 3000 (``localhost`` y
+    ``127.0.0.1``). Se puede sobrescribir con la variable de entorno
+    ``VSE_CORS_ORIGINS`` (lista separada por comas).
+    """
+    override = os.environ.get("VSE_CORS_ORIGINS")
+    if override:
+        origenes = [o.strip() for o in override.split(",") if o.strip()]
+        if origenes:
+            return origenes
+    return ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
 @asynccontextmanager
@@ -57,8 +93,30 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """
     resultado = verificar_dependencias()
     if resultado.debe_bloquear:
+        faltantes = resultado.faltantes
+        logger.error(
+            "No se puede iniciar el Backend: faltan dependencias requeridas: %s",
+            ", ".join(faltantes),
+        )
+        # Pista accionable para resolver cada tipo de dependencia (Req 12.4).
+        binarios = {"ffmpeg", "ffprobe"}
+        if binarios.intersection(faltantes):
+            logger.error(
+                "  - Para ffmpeg/ffprobe instala ffmpeg con Homebrew: "
+                "`brew install ffmpeg`."
+            )
+        if "auto-editor" in faltantes or "faster-whisper" in faltantes:
+            logger.error(
+                "  - Para auto-editor y faster-whisper instala las dependencias "
+                "de Python: `pip install -r requirements.txt` (dentro de tu venv)."
+            )
+        logger.error(
+            "  - Si arrancas con doble clic, el PATH de Homebrew "
+            "(/opt/homebrew/bin, /usr/local/bin) se añade automáticamente; "
+            "verifica que los binarios estén realmente instalados."
+        )
         # Req 12.4: impedir que el Backend complete su arranque.
-        raise DependenciasFaltantesError(resultado.faltantes)
+        raise DependenciasFaltantesError(faltantes)
     logger.info("Todas las dependencias están disponibles; el Backend inicia.")
     yield
 
@@ -72,6 +130,49 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# CORS: permite que la Interfaz (navegador en localhost:3000) llame al backend
+# (localhost:8000). Sin esto el navegador bloquea la respuesta y el frontend
+# recibe "Failed to fetch". No se usan credenciales (operación local sin auth).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origenes_cors(),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def registrar_peticiones(request: Request, call_next):
+    """Middleware de logging: registra método, ruta, estado y duración (ms).
+
+    Ejemplo de línea registrada: ``POST /clips -> 200 (123 ms)``. Ante una
+    excepción no controlada, la registra y la re-lanza para que la maneje la
+    capa correspondiente.
+    """
+    inicio = time.monotonic()
+    try:
+        respuesta = await call_next(request)
+    except Exception:
+        duracion_ms = (time.monotonic() - inicio) * 1000
+        logger.exception(
+            "%s %s -> ERROR (%.0f ms)",
+            request.method,
+            request.url.path,
+            duracion_ms,
+        )
+        raise
+    duracion_ms = (time.monotonic() - inicio) * 1000
+    logger.info(
+        "%s %s -> %d (%.0f ms)",
+        request.method,
+        request.url.path,
+        respuesta.status_code,
+        duracion_ms,
+    )
+    return respuesta
+
 
 # Routers de la API (tarea 13): subida de clips (Req 1) y música (Req 8.1, 8.2).
 app.include_router(clips_router.router)
