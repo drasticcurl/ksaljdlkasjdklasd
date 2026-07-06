@@ -1,0 +1,1096 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1. Preparar el repositorio y la estructura del proyecto": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846525
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346861354
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347454273
+      }
+    ],
+    "2.1 Implementar `backend/app/config.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846531
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347243158
+      }
+    ],
+    "2.2 Implementar los modelos de dominio en `backend/app/models/`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846536
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347244388
+      }
+    ],
+    "3.1 Implementar `backend/app/util/units.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846546
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347509126
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347897048
+      }
+    ],
+    "4.1 Implementar `backend/app/engine/grouping.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846550
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347938766
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348300936
+      }
+    ],
+    "5.1 Implementar `backend/app/util/ass_time.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846554
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348312078
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348940919
+      }
+    ],
+    "5.2 Implementar `backend/app/engine/ass_builder.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846560
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348312200
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348942260
+      }
+    ],
+    "6.1 Implementar los cálculos puros en `backend/app/engine/normalize.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846564
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348952996
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783349356881
+      }
+    ],
+    "7. Checkpoint - Asegurar que la lógica pura del motor pasa sus tests": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846575
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783349367282
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783349464950
+      }
+    ],
+    "8.1 Añadir la validación de rangos a `backend/app/models/settings.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846582
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783349482633
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350034934
+      }
+    ],
+    "9.1 Implementar `backend/app/storage/workdir.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846590
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350041570
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350641010
+      }
+    ],
+    "10.1 Implementar `backend/app/deps/checker.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846594
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350655091
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350937559
+      }
+    ],
+    "10.2 Integrar el verificador en el evento de arranque de FastAPI en `backend/main.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846600
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350655950
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350938439
+      }
+    ],
+    "11.1 Implementar la inspección de clips en `backend/app/engine/ffprobe.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846613
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350950629
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352116811
+      }
+    ],
+    "11.2 Completar el Paso 1 (UNIR) en `backend/app/engine/normalize.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846619
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352118476
+      }
+    ],
+    "11.3 Implementar el Paso 2 (CORTAR SILENCIOS) en `backend/app/engine/silence.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846623
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352119801
+      }
+    ],
+    "11.6 Implementar el Paso 3 (TRANSCRIBIR) en `backend/app/engine/transcribe.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846628
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352122868
+      }
+    ],
+    "11.8 Implementar el Paso 4 (SUBTÍTULOS) en `backend/app/engine/subtitles.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846633
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352125850
+      }
+    ],
+    "11.9 Implementar el Paso 5 (MÚSICA) en `backend/app/engine/music.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846637
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352127810
+      }
+    ],
+    "12.1 Implementar `backend/app/engine/pipeline.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846642
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352133842
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352840001
+      }
+    ],
+    "12.2 Implementar `backend/app/jobs/manager.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846648
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352134531
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352838010
+      }
+    ],
+    "12.3 Implementar `backend/app/jobs/runner.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846653
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352134922
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352839004
+      }
+    ],
+    "13.1 Implementar `POST /clips` en `backend/app/api/clips.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846657
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352846407
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353665981
+      }
+    ],
+    "13.2 Implementar `POST /musica` en `backend/app/api/music.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846662
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352848373
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353667507
+      }
+    ],
+    "13.3 Registrar los routers de clips y música en `backend/main.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846666
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352848728
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353663754
+      }
+    ],
+    "14.1 Implementar `POST /procesar` en `backend/app/api/process.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846670
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353687358
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354412927
+      }
+    ],
+    "14.2 Implementar `GET /progreso/{id}` en `backend/app/api/progress.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846675
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353688242
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354414899
+      }
+    ],
+    "14.3 Implementar `GET /descargar/{id}` en `backend/app/api/download.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846680
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353689217
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354415928
+      }
+    ],
+    "14.4 Registrar los routers de procesar/progreso/descargar en `backend/main.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846684
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353685915
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354411942
+      }
+    ],
+    "15. Checkpoint - Asegurar que el backend completo pasa sus tests": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846690
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354426753
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354592101
+      }
+    ],
+    "16.1 Crear la configuración base del frontend": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846694
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354610735
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355193082
+      }
+    ],
+    "16.2 Implementar tipos y cliente HTTP en `frontend/lib/`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846698
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354609101
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355192360
+      }
+    ],
+    "17.1 Implementar la validación de archivos en `frontend/lib/validation.ts`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846703
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355197991
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355804610
+      }
+    ],
+    "17.2 Implementar `frontend/components/ClipUploader.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846709
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355197226
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355800411
+      }
+    ],
+    "18.1 Implementar `frontend/components/ClipList.tsx` y `SortableClipItem.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846713
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355811419
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356236431
+      }
+    ],
+    "19.1 Implementar `frontend/components/settings/*`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846718
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356252368
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356808457
+      }
+    ],
+    "19.2 Implementar `frontend/components/MusicUploader.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846722
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356251309
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356810690
+      }
+    ],
+    "20.1 Implementar `frontend/components/ProcessButton.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846726
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356823999
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783357523026
+      }
+    ],
+    "20.2 Implementar `frontend/components/ProgressPanel.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846731
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356828023
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783357519302
+      }
+    ],
+    "20.3 Implementar `frontend/components/ResultPreview.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846735
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356829847
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783357531672
+      }
+    ],
+    "20.4 Cablear todos los componentes en `frontend/app/page.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846740
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356822019
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783357534057
+      }
+    ],
+    "21.1 Reescribir `README.md` en la raíz del proyecto": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846745
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783357545900
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783358141910
+      }
+    ],
+    "21.2 Crear scripts de arranque documentados (por ejemplo `scripts/start-backend.sh` y `scripts/start-frontend.sh`)": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846750
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783357544553
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783358141740
+      }
+    ],
+    "22. Checkpoint final - Asegurar que toda la suite pasa": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783346846754
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783358159355
+      },
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783358456448
+      }
+    ],
+    "2. Definir la configuración y los modelos de datos del backend": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347244395
+      }
+    ],
+    "3. Implementar la lógica pura de conversión de unidades UI↔motor": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347897060
+      }
+    ],
+    "3.2 Escribir test property-based de conversión de unidades en `backend/tests/test_units.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783347925682
+      }
+    ],
+    "4. Implementar la lógica pura de agrupación de palabras en subtítulos": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348300941
+      }
+    ],
+    "4.2 Escribir test property-based de tamaño de grupo y fallback en `backend/tests/test_grouping.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348303658
+      }
+    ],
+    "4.3 Escribir test property-based de cobertura sin pérdida en `backend/tests/test_grouping.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348304000
+      }
+    ],
+    "4.4 Escribir test property-based de tiempos de grupo en `backend/tests/test_grouping.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348305007
+      }
+    ],
+    "4.5 Escribir test property-based de robustez ante timestamps ausentes en `backend/tests/test_grouping.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348305986
+      }
+    ],
+    "4.6 Escribir test property-based de monotonicidad y no-solapamiento en `backend/tests/test_grouping.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348306813
+      }
+    ],
+    "5. Implementar la lógica pura de construcción del archivo ASS": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348942266
+      }
+    ],
+    "5.3 Escribir test property-based de round-trip del ASS en `backend/tests/test_ass_builder.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348945092
+      }
+    ],
+    "5.4 Escribir test property-based del invariante slide-up en `backend/tests/test_ass_builder.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348946439
+      }
+    ],
+    "5.5 Escribir test property-based del mapeo de alineación en `backend/tests/test_ass_builder.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783348947651
+      }
+    ],
+    "6. Implementar la lógica pura de normalización 9:16 y orden de concatenación": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783349356885
+      }
+    ],
+    "6.2 Escribir test property-based de normalización sin deformación en `backend/tests/test_normalize.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783349358507
+      }
+    ],
+    "6.3 Escribir test property-based de homogeneización en `backend/tests/test_normalize.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783349359450
+      }
+    ],
+    "6.4 Escribir test property-based de preservación de orden extremo a extremo en `backend/tests/test_ordering.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783349360068
+      }
+    ],
+    "8. Completar la validación de ajustes en los modelos": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350034946
+      }
+    ],
+    "8.2 Escribir test property-based de validación de ajustes en `backend/tests/test_settings.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350036535
+      }
+    ],
+    "9. Implementar el almacén de trabajo por Job y su limpieza": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350641014
+      }
+    ],
+    "9.2 Escribir test property-based de contención de temporales en `backend/tests/test_workdir.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350643233
+      }
+    ],
+    "9.3 Escribir test property-based de limpieza en toda terminación en `backend/tests/test_workdir.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350644637
+      }
+    ],
+    "9.4 Escribir test property-based de política de reintento de limpieza en `backend/tests/test_workdir.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350649543
+      }
+    ],
+    "10. Implementar el Verificador de Dependencias y su integración en el arranque": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350938443
+      }
+    ],
+    "10.3 Escribir test property-based de la decisión del verificador en `backend/tests/test_deps.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350939261
+      }
+    ],
+    "10.4 Escribir test unitario del timeout de dependencia en `backend/tests/test_deps.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783350940501
+      }
+    ],
+    "11.4 Escribir test property-based de silencios desactivados (no-op) en `backend/tests/test_silence.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352119872
+      }
+    ],
+    "11.5 Escribir test property-based de validación de umbral/margen en `backend/tests/test_silence.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352121852
+      }
+    ],
+    "11.7 Escribir test property-based de validación de idioma/modelo en `backend/tests/test_transcribe.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352124839
+      }
+    ],
+    "11. Implementar los pasos del pipeline que invocan herramientas externas": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352127814
+      }
+    ],
+    "11.10 Escribir tests de integración de los pasos con medios de prueba cortos en `backend/tests/test_engine_integration.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352127936
+      }
+    ],
+    "12. Orquestar el pipeline completo y el Gestor de Jobs": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352840005
+      }
+    ],
+    "12.4 Escribir test property-based de invariantes de progreso en `backend/tests/test_api.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352841985
+      }
+    ],
+    "12.5 Escribir test property-based de fallo de paso detiene el pipeline en `backend/tests/test_api.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783352842361
+      }
+    ],
+    "13. Implementar los endpoints de subida de clips y música": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353667511
+      }
+    ],
+    "13.4 Escribir test property-based de orden/cardinalidad/identidad de clips en `backend/tests/test_api.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353669172
+      }
+    ],
+    "13.5 Escribir test property-based de atomicidad de almacenamiento en `backend/tests/test_api.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353671757
+      }
+    ],
+    "13.6 Escribir tests unitarios de subida en `backend/tests/test_api.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783353678258
+      }
+    ],
+    "14. Implementar los endpoints de procesamiento, progreso y descarga": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354415933
+      }
+    ],
+    "14.5 Escribir test property-based de rechazo de peticiones inválidas en `backend/tests/test_api.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354416929
+      }
+    ],
+    "14.6 Escribir test property-based de descarga requiere Job completado en `backend/tests/test_api.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354418958
+      }
+    ],
+    "14.7 Escribir tests unitarios de progreso/descarga/latencia en `backend/tests/test_api.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783354419259
+      }
+    ],
+    "16. Inicializar la estructura del frontend Next.js": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355193092
+      }
+    ],
+    "17.3 Escribir test property-based de validación de archivos en `frontend/lib/__tests__/validation.test.ts`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355801898
+      }
+    ],
+    "17.4 Escribir tests unitarios de límites de selección en `frontend/components/__tests__/ClipUploader.test.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355803040
+      }
+    ],
+    "17. Implementar la selección y validación de clips en la Interfaz": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783355804615
+      }
+    ],
+    "18. Implementar el reordenamiento por arrastrar y soltar": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356236436
+      }
+    ],
+    "18.2 Escribir test property-based de reordenamiento y cancelación en `frontend/lib/__tests__/reorder.test.ts`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356238426
+      }
+    ],
+    "19.3 Escribir tests unitarios de rangos de ajustes en `frontend/components/settings/__tests__/settings.test.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356809744
+      }
+    ],
+    "19. Implementar los paneles de ajustes y la música en la Interfaz": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783356810694
+      }
+    ],
+    "20.5 Escribir tests unitarios del flujo de UI en `frontend/components/__tests__/flow.test.tsx`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783357516972
+      }
+    ],
+    "20. Implementar el disparo del procesamiento, el progreso y el resultado": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783357534062
+      }
+    ],
+    "21.3 Escribir tests smoke de arranque/config en `backend/tests/test_startup.py`": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783358140051
+      }
+    ],
+    "21. Implementar el README y los scripts de arranque en macOS": [
+      {
+        "executionId": "1ad2eed4-8ea1-46a2-8c3a-aba542de1835",
+        "chatSessionId": "2782d258-adb3-4adf-a7a5-155c61c457db",
+        "timestamp": 1783358141915
+      }
+    ]
+  }
+}
