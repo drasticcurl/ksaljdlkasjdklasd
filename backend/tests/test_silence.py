@@ -236,6 +236,59 @@ def test_cortar_silencios_falla_si_auto_editor_falla() -> None:
         )
 
 
+def test_cortar_silencios_incluye_stderr_en_el_motivo() -> None:
+    """El motivo del error incluye el stderr real de auto-editor y el código (Req 4.5).
+
+    Reproduce el escenario reportado: auto-editor termina con código != 0 y su
+    stderr contiene la causa; el mensaje resultante debe hacerla visible en lugar
+    del genérico "código de salida distinto de cero".
+    """
+    stderr_conocido = "algo salió mal en auto-editor"
+
+    def runner(args: Sequence[str]) -> ResultadoComando:
+        return ResultadoComando(
+            returncode=2, stdout="", stderr=stderr_conocido, args=list(args)
+        )
+
+    with pytest.raises(SilenceProcessingError) as info:
+        cortar_silencios(
+            "unido.mp4",
+            "cortado.mp4",
+            activado=True,
+            umbral_db=-30.0,
+            margen_ms=200,
+            runner=runner,
+        )
+
+    mensaje = str(info.value)
+    assert stderr_conocido in mensaje
+    assert "2" in mensaje  # el código de salida aparece en el motivo
+
+
+def test_cortar_silencios_usa_stdout_si_stderr_vacio() -> None:
+    """Si stderr está vacío, el motivo recurre a stdout para no perder contexto."""
+    stdout_conocido = "detalle del fallo impreso en stdout"
+
+    def runner(args: Sequence[str]) -> ResultadoComando:
+        return ResultadoComando(
+            returncode=3, stdout=stdout_conocido, stderr="", args=list(args)
+        )
+
+    with pytest.raises(SilenceProcessingError) as info:
+        cortar_silencios(
+            "unido.mp4",
+            "cortado.mp4",
+            activado=True,
+            umbral_db=-30.0,
+            margen_ms=200,
+            runner=runner,
+        )
+
+    mensaje = str(info.value)
+    assert stdout_conocido in mensaje
+    assert "3" in mensaje
+
+
 def test_comando_auto_editor_incluye_umbral_y_margen() -> None:
     comando = comando_auto_editor("in.mp4", "out.mp4", 4.0, 0.2)
     assert comando[0] == "auto-editor"

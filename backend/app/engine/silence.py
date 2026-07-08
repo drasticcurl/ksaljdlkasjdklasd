@@ -24,6 +24,7 @@ Referencias de requisitos: 4.1, 4.2, 4.3, 4.4, 4.5.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -41,6 +42,8 @@ from app.util.units import (
     umbral_db_a_pct,
 )
 
+logger = logging.getLogger(__name__)
+
 # Nombre del artefacto de video sin silencios producido por el Paso 2.
 NOMBRE_CORTADO: str = "cortado.mp4"
 
@@ -49,6 +52,22 @@ _PISTA_PERMISOS: str = (
     "el binario de auto-editor no es ejecutable; reinstala con "
     "`pip install --force-reinstall auto-editor` o verifica permisos"
 )
+
+# Límite de caracteres de la salida de auto-editor que se incluye en el motivo
+# del error, para no desbordar el mensaje del Job ni los logs.
+_MAX_DETALLE_SALIDA: int = 1500
+
+
+def _recortar_salida(texto: str, limite: int = _MAX_DETALLE_SALIDA) -> str:
+    """Devuelve las últimas líneas útiles de ``texto`` recortadas a ``limite``.
+
+    Se prioriza el final de la salida (donde las herramientas suelen imprimir el
+    error real) y se recorta por la izquierda añadiendo una marca de truncado.
+    """
+    texto = (texto or "").strip()
+    if len(texto) <= limite:
+        return texto
+    return "...(recortado)... " + texto[-limite:]
 
 
 class SilenceValidationError(ValueError):
@@ -249,6 +268,9 @@ def cortar_silencios(
 
     salida_path = Path(salida)
     comando = comando_auto_editor(str(entrada_path), str(salida_path), umbral_pct, margen_s)
+    # Loguea el comando EXACTO (argv completo) antes de ejecutarlo, para poder
+    # reproducir manualmente la invocación al diagnosticar fallos.
+    logger.info("Ejecutando auto-editor: %s", " ".join(comando))
     try:
         resultado = runner(comando)
     except PermissionError as exc:
@@ -266,13 +288,40 @@ def cortar_silencios(
         ) from exc
 
     if resultado.returncode != 0:
-        detalle = (resultado.stderr or "").strip() or "código de salida distinto de cero"
-        # auto-editor puede reportar el fallo de permisos en su stderr (sin lanzar
+        stderr_texto = (resultado.stderr or "").strip()
+        stdout_texto = (resultado.stdout or "").strip()
+
+        # Loguea la salida COMPLETA a nivel error para diagnóstico sin recortes.
+        logger.error(
+            "auto-editor falló (código %s). Comando: %s\nstderr:\n%s\nstdout:\n%s",
+            resultado.returncode,
+            " ".join(comando),
+            stderr_texto or "(vacío)",
+            stdout_texto or "(vacío)",
+        )
+
+        # Para el motivo del Job usamos stderr (donde va el error real); si está
+        # vacío, recurrimos a stdout. Recortamos a ~1500 caracteres.
+        fuente = stderr_texto or stdout_texto
+        detalle = _recortar_salida(fuente) if fuente else ""
+
+        # auto-editor puede reportar el fallo de permisos en su salida (sin lanzar
         # excepción): p. ej. "[Errno 13] Permission denied". Añade la pista.
-        detalle_lower = detalle.lower()
-        if "errno 13" in detalle_lower or "permission denied" in detalle_lower:
-            raise SilenceProcessingError(f"auto-editor falló: {detalle}. {_PISTA_PERMISOS}")
-        raise SilenceProcessingError(f"auto-editor falló: {detalle}")
+        fuente_lower = fuente.lower()
+        if "errno 13" in fuente_lower or "permission denied" in fuente_lower:
+            raise SilenceProcessingError(
+                f"auto-editor falló (código {resultado.returncode}): {detalle}. "
+                f"{_PISTA_PERMISOS}"
+            )
+
+        if detalle:
+            raise SilenceProcessingError(
+                f"auto-editor falló (código {resultado.returncode}): {detalle}"
+            )
+        raise SilenceProcessingError(
+            f"auto-editor falló (código {resultado.returncode}): "
+            "sin salida de diagnóstico (stderr y stdout vacíos)"
+        )
 
     return salida_path
 
