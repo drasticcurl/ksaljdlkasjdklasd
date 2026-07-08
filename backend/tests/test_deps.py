@@ -19,8 +19,10 @@ ffprobe / auto-editor ni del paquete faster-whisper instalado).
 from __future__ import annotations
 
 import os
+import stat
 import subprocess
 import time
+from pathlib import Path
 from typing import Dict, List, Set
 
 from hypothesis import given, settings
@@ -35,7 +37,12 @@ from app.deps.checker import (
     comprobar_binario,
     verificar_dependencias,
 )
-from app.deps.path_setup import RUTAS_LOCALES_MACOS, asegurar_path_local
+from app.deps import path_setup
+from app.deps.path_setup import (
+    RUTAS_LOCALES_MACOS,
+    asegurar_path_local,
+    asegurar_permisos_auto_editor,
+)
 
 # Mínimo 100 iteraciones por propiedad.
 PBT = settings(max_examples=150, deadline=None)
@@ -301,3 +308,66 @@ def test_asegurar_path_local_no_falla_con_path_vacio(monkeypatch) -> None:
     entradas = resultado.split(os.pathsep)
     for ruta in RUTAS_LOCALES_MACOS:
         assert ruta in entradas
+
+
+
+# ---------------------------------------------------------------------------
+# Bugfix: permisos de ejecución del binario empaquetado de auto-editor (unit)
+# Validates: corrige "[Errno 13] Permission denied" al cortar silencios.
+# ---------------------------------------------------------------------------
+def _sin_ejecucion(modo: int) -> int:
+    """Devuelve ``modo`` sin ningún bit de ejecución (usuario/grupo/otros)."""
+    return modo & ~(stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def test_asegurar_permisos_auto_editor_agrega_bit_ejecucion(tmp_path, monkeypatch) -> None:
+    """Un binario en ``auto_editor/bin/`` sin bit de ejecución queda ejecutable."""
+    bin_dir = tmp_path / "auto_editor" / "bin"
+    bin_dir.mkdir(parents=True)
+    binario = bin_dir / "auto-editor"
+    binario.write_bytes(b"#!/bin/sh\necho hola\n")
+    # Quitar todos los bits de ejecución para simular el empaquetado defectuoso.
+    os.chmod(binario, _sin_ejecucion(binario.stat().st_mode))
+    assert binario.stat().st_mode & stat.S_IXUSR == 0
+
+    # Monkeypatch de la localización del paquete para apuntar al bin temporal.
+    monkeypatch.setattr(path_setup, "_localizar_bin_auto_editor", lambda: bin_dir)
+
+    corregidos = asegurar_permisos_auto_editor()
+
+    assert corregidos == 1
+    modo = binario.stat().st_mode
+    assert modo & stat.S_IXUSR
+    assert modo & stat.S_IXGRP
+    assert modo & stat.S_IXOTH
+
+
+def test_asegurar_permisos_auto_editor_es_idempotente(tmp_path, monkeypatch) -> None:
+    """Si el binario ya es ejecutable, no se cuenta como corregido (idempotencia)."""
+    bin_dir = tmp_path / "auto_editor" / "bin"
+    bin_dir.mkdir(parents=True)
+    binario = bin_dir / "auto-editor"
+    binario.write_bytes(b"#!/bin/sh\necho hola\n")
+    os.chmod(binario, binario.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    monkeypatch.setattr(path_setup, "_localizar_bin_auto_editor", lambda: bin_dir)
+
+    # Primera llamada: ya ejecutable => nada que corregir.
+    assert asegurar_permisos_auto_editor() == 0
+    # Segunda llamada: sigue siendo idempotente.
+    assert asegurar_permisos_auto_editor() == 0
+
+
+def test_asegurar_permisos_auto_editor_no_falla_sin_paquete(monkeypatch) -> None:
+    """Si el paquete auto_editor no está instalado, no lanza y devuelve 0."""
+    monkeypatch.setattr(path_setup, "_localizar_bin_auto_editor", lambda: None)
+    assert asegurar_permisos_auto_editor() == 0
+
+
+def test_asegurar_permisos_auto_editor_find_spec_ausente(monkeypatch) -> None:
+    """Con ``find_spec`` devolviendo ``None`` (no instalado), no rompe."""
+    monkeypatch.setattr(
+        "app.deps.path_setup.importlib.util.find_spec", lambda nombre: None
+    )
+    # No debe lanzar aunque se ejecute la localización real.
+    assert asegurar_permisos_auto_editor() == 0
