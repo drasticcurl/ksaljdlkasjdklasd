@@ -14,7 +14,7 @@ from app.deps.checker import (
     ResultadoVerificacion,
     verificar_dependencias,
 )
-from app.deps.path_setup import asegurar_path_local
+from app.deps.path_setup import asegurar_path_local, asegurar_permisos_auto_editor
 
 __all__ = [
     "DEPENDENCIAS",
@@ -22,5 +22,6 @@ __all__ = [
     "ResultadoDependencia",
     "ResultadoVerificacion",
     "asegurar_path_local",
+    "asegurar_permisos_auto_editor",
     "verificar_dependencias",
 ]

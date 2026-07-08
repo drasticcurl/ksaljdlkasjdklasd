@@ -27,7 +27,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional, Union
 
+import errno
+
 from app import config
+from app.deps.path_setup import asegurar_permisos_auto_editor
 from app.engine.proc import Runner, ejecutar_comando
 from app.util.units import (
     UI_MARGEN_MS_MAX,
@@ -40,6 +43,12 @@ from app.util.units import (
 
 # Nombre del artefacto de video sin silencios producido por el Paso 2.
 NOMBRE_CORTADO: str = "cortado.mp4"
+
+# Pista accionable cuando auto-editor falla por falta de permiso de ejecución.
+_PISTA_PERMISOS: str = (
+    "el binario de auto-editor no es ejecutable; reinstala con "
+    "`pip install --force-reinstall auto-editor` o verifica permisos"
+)
 
 
 class SilenceValidationError(ValueError):
@@ -234,17 +243,35 @@ def cortar_silencios(
     umbral_pct = umbral_db_a_pct(umbral_efectivo)
     margen_s = margen_ms_a_s(margen_efectivo)
 
+    # Defensa ante binarios de auto-editor empaquetados sin bit de ejecución
+    # ([Errno 13] Permission denied). Idempotente y tolerante a fallos.
+    asegurar_permisos_auto_editor()
+
     salida_path = Path(salida)
     comando = comando_auto_editor(str(entrada_path), str(salida_path), umbral_pct, margen_s)
     try:
         resultado = runner(comando)
+    except PermissionError as exc:
+        raise SilenceProcessingError(
+            f"no se pudo ejecutar auto-editor: {exc}. {_PISTA_PERMISOS}"
+        ) from exc
     except OSError as exc:
+        # Errno 13 (permiso denegado) puede llegar como OSError según el SO.
+        if getattr(exc, "errno", None) == errno.EACCES:
+            raise SilenceProcessingError(
+                f"no se pudo ejecutar auto-editor: {exc}. {_PISTA_PERMISOS}"
+            ) from exc
         raise SilenceProcessingError(
             f"no se pudo ejecutar auto-editor: {exc}"
         ) from exc
 
     if resultado.returncode != 0:
         detalle = (resultado.stderr or "").strip() or "código de salida distinto de cero"
+        # auto-editor puede reportar el fallo de permisos en su stderr (sin lanzar
+        # excepción): p. ej. "[Errno 13] Permission denied". Añade la pista.
+        detalle_lower = detalle.lower()
+        if "errno 13" in detalle_lower or "permission denied" in detalle_lower:
+            raise SilenceProcessingError(f"auto-editor falló: {detalle}. {_PISTA_PERMISOS}")
         raise SilenceProcessingError(f"auto-editor falló: {detalle}")
 
     return salida_path

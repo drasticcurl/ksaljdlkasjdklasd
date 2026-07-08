@@ -644,6 +644,16 @@ def _wav_valido(muestras: bytes = b"\x00\x00\x01\x00") -> bytes:
     return b"RIFF" + len(cuerpo).to_bytes(4, "little") + cuerpo
 
 
+def _mp3_falso(muestras: bytes = b"\x00" * 64) -> bytes:
+    """Construye bytes con una cabecera de frame MP3 (``0xFF 0xFB``).
+
+    Reproduce el caso real observado en producción: un archivo con contenido MP3
+    (cabecera ``b"\\xff\\xfb..."``) que ffmpeg decodifica sin problemas pero que
+    la antigua validación por cabecera RIFF/WAVE rechazaba como "WAV inválido".
+    """
+    return b"\xff\xfb\xb0\x44" + muestras
+
+
 # ---------------------------------------------------------------------------
 # Tests unitarios de subida (13.6)
 # ---------------------------------------------------------------------------
@@ -721,35 +731,77 @@ def test_musica_wav_valido() -> None:
         shutil.rmtree(base, ignore_errors=True)
 
 
-def test_musica_rechaza_wav_invalido() -> None:
-    """Un archivo no WAV (cabecera inválida) se rechaza conservando originales (Req 8.2)."""
+def test_musica_acepta_mp3() -> None:
+    """Un MP3 (cabecera ``\\xff\\xfb``) con extensión soportada se acepta (Req 8.1).
+
+    ffmpeg decodifica MP3 al mezclar, así que la subida acepta el archivo por su
+    extensión aunque su contenido no sea WAV. Reproduce el caso real que antes se
+    rechazaba erróneamente como "WAV inválido".
+    """
+    base = Path(tempfile.mkdtemp(prefix="vse_mus_mp3_"))
+    try:
+        with _cliente_api(base) as client:
+            resp = client.post(
+                "/musica",
+                files=[("file", ("cancion.mp3", _mp3_falso(), "audio/mpeg"))],
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["musica_id"].startswith("mus_")
+            assert body["nombre_original"] == "cancion.mp3"
+            assert len(list((base / "musica").glob("*"))) == 1
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_musica_acepta_mp3_con_extension_wav() -> None:
+    """Contenido MP3 con extensión ``.wav`` se acepta (extensión soportada) (Req 8.1).
+
+    Caso real observado en producción: ``speech.wav`` cuyo contenido era MP3
+    (``b"\\xff\\xfb..."``). Ahora se acepta y ffmpeg valida el contenido al mezclar.
+    """
+    base = Path(tempfile.mkdtemp(prefix="vse_mus_mp3wav_"))
+    try:
+        with _cliente_api(base) as client:
+            resp = client.post(
+                "/musica",
+                files=[("file", ("speech.wav", _mp3_falso(), "audio/wav"))],
+            )
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["musica_id"].startswith("mus_")
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def test_musica_rechaza_extension_no_soportada() -> None:
+    """Un archivo con extensión no soportada se rechaza con 415 (Req 8.2)."""
     base = Path(tempfile.mkdtemp(prefix="vse_mus_bad_"))
     try:
         with _cliente_api(base) as client:
-            # Extensión .wav pero contenido no-RIFF/WAVE.
+            # Extensión .txt: no es un formato de audio soportado.
             resp = client.post(
                 "/musica",
-                files=[("file", ("fake.wav", b"NO_ES_UN_WAV_REAL", "audio/wav"))],
+                files=[("file", ("notas.txt", b"esto no es audio", "text/plain"))],
             )
             assert resp.status_code == 415
-            assert resp.json()["error"]["code"] == "INVALID_WAV"
+            assert resp.json()["error"]["code"] == "UNSUPPORTED_AUDIO"
             # Nada se almacenó.
             assert not (base / "musica").exists() or list((base / "musica").glob("*")) == []
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
 
-def test_musica_rechaza_extension_no_wav() -> None:
-    """Un archivo con extensión distinta de .wav se rechaza (Req 8.2)."""
-    base = Path(tempfile.mkdtemp(prefix="vse_mus_ext_"))
+def test_musica_rechaza_extension_video() -> None:
+    """Un archivo con extensión de video (.mp4) se rechaza (Req 8.2)."""
+    base = Path(tempfile.mkdtemp(prefix="vse_mus_mp4_"))
     try:
         with _cliente_api(base) as client:
             resp = client.post(
                 "/musica",
-                files=[("file", ("cancion.mp3", _wav_valido(), "audio/mpeg"))],
+                files=[("file", ("clip.mp4", b"\x00\x00\x00\x18ftyp", "video/mp4"))],
             )
             assert resp.status_code == 415
-            assert resp.json()["error"]["code"] == "INVALID_WAV"
+            assert resp.json()["error"]["code"] == "UNSUPPORTED_AUDIO"
     finally:
         shutil.rmtree(base, ignore_errors=True)
 
@@ -1025,5 +1077,134 @@ def test_descargar_job_completado_envia_mp4() -> None:
             assert resp.headers["content-type"] == "video/mp4"
             assert "attachment" in resp.headers.get("content-disposition", "")
             assert resp.content == ruta_final.read_bytes()
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+
+# ===========================================================================
+# BUGFIX — Resolución de IDs de clip a rutas en el pipeline (ffprobe)
+#
+# El ``Orden_de_Clips`` almacenado en un Job contiene IDENTIFICADORES de clip,
+# pero el pipeline (paso UNIR → ``ffprobe``) necesita RUTAS de archivo reales.
+# Antes, el runner pasaba los ids tal cual y ``ffprobe`` fallaba con
+# "No such file or directory". El runner ahora resuelve cada id a su ruta con el
+# ``resolver_clip`` inyectable (identidad por defecto para no romper otros tests).
+# ===========================================================================
+
+
+def test_resolver_clip_por_id_encuentra_por_glob_y_none_si_no_existe() -> None:
+    """`_resolver_clip_por_id` devuelve la ruta del archivo del clip por glob, o
+    ``None`` si no hay coincidencia o el id es vacío."""
+    from app.api.process import _resolver_clip_por_id
+
+    with isolated_config_dirs():
+        base = ClipStore().base_dir
+        base.mkdir(parents=True, exist_ok=True)
+        (base / "clip_existente.mp4").write_bytes(b"fake-mp4")
+
+        # Encuentra la ruta real por glob {id}.*
+        assert _resolver_clip_por_id("clip_existente") == str(base / "clip_existente.mp4")
+        # Sin coincidencia -> None.
+        assert _resolver_clip_por_id("clip_inexistente") is None
+        # Id vacío -> None (sin efectos).
+        assert _resolver_clip_por_id("") is None
+
+
+def test_runner_resuelve_ids_de_clip_a_rutas() -> None:
+    """El runner traduce los ids del Orden_de_Clips a RUTAS de archivo reales
+    antes de invocar el pipeline (BUG: ffprobe recibía ids en vez de rutas)."""
+    from app.api.process import _resolver_clip_por_id
+
+    with isolated_config_dirs():
+        # Crear archivos reales de clip en el almacén ({id}.mp4).
+        base = ClipStore().base_dir
+        base.mkdir(parents=True, exist_ok=True)
+        ids = ["clip_aaa", "clip_bbb"]
+        for cid in ids:
+            (base / f"{cid}.mp4").write_bytes(b"fake-mp4")
+
+        manager = JobManager()
+        manager.crear_job("job-resolver", ids, _ajustes_con_musica(), workdir="wd")
+
+        capturado: Dict[str, List[str]] = {}
+        fakes = _construir_fakes(recorder=[], fallo_en=None)
+
+        def fn_unir_captura(job, orden, ancho, alto, fps, **kw):  # noqa: ANN001
+            capturado["orden"] = list(orden)
+            return job.resolve("unido.mp4")
+
+        fakes["fn_unir"] = fn_unir_captura
+
+        runner = JobRunner(
+            manager,
+            resolver_clip=(lambda cid: _resolver_clip_por_id(cid) or cid),
+            **fakes,
+        )
+
+        resultado = runner.ejecutar_job("job-resolver")
+
+        assert resultado.exito is True
+        # El pipeline recibió RUTAS resueltas, no los ids.
+        rutas_esperadas = [str(base / f"{cid}.mp4") for cid in ids]
+        assert capturado["orden"] == rutas_esperadas
+        for ruta, cid in zip(capturado["orden"], ids):
+            assert ruta != cid
+            assert Path(ruta).exists()
+
+
+def test_runner_resolver_clip_por_defecto_es_identidad() -> None:
+    """Sin ``resolver_clip`` inyectado, el runner conserva los ids tal cual (no
+    rompe los tests existentes que usan ids ficticios sin archivos en disco)."""
+    with isolated_config_dirs():
+        manager = JobManager()
+        manager.crear_job("job-id", ["id-1", "id-2"], _ajustes_con_musica(), workdir="wd")
+
+        capturado: Dict[str, List[str]] = {}
+        fakes = _construir_fakes(recorder=[], fallo_en=None)
+
+        def fn_unir_captura(job, orden, ancho, alto, fps, **kw):  # noqa: ANN001
+            capturado["orden"] = list(orden)
+            return job.resolve("unido.mp4")
+
+        fakes["fn_unir"] = fn_unir_captura
+
+        runner = JobRunner(manager, **fakes)
+        resultado = runner.ejecutar_job("job-id")
+
+        assert resultado.exito is True
+        assert capturado["orden"] == ["id-1", "id-2"]
+
+
+# ===========================================================================
+# Validación de audio: la variante RF64 (archivos grandes) sigue aceptándose
+#
+# Un WAV RF64 (contenedor WAVE con firma RF64 en vez de RIFF) usa la extensión
+# ``.wav`` y, con la política basada en extensión, se acepta como cualquier otro
+# formato de audio soportado.
+# ===========================================================================
+
+
+def _rf64_valido(muestras: bytes = b"\x00\x00\x01\x00") -> bytes:
+    """Construye un WAV con cabecera RF64 (variante para archivos grandes)."""
+    wav = _wav_valido(muestras)
+    # Sustituir la firma de contenedor RIFF por RF64 conservando el resto.
+    return b"RF64" + wav[4:]
+
+
+def test_musica_acepta_rf64() -> None:
+    """Un WAV con cabecera RF64...WAVE se acepta y devuelve ``musica_id`` (Req 8.1)."""
+    base = Path(tempfile.mkdtemp(prefix="vse_mus_rf64_"))
+    try:
+        with _cliente_api(base) as client:
+            resp = client.post(
+                "/musica",
+                files=[("file", ("grande.wav", _rf64_valido(), "audio/wav"))],
+            )
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert body["musica_id"].startswith("mus_")
+            assert body["nombre_original"] == "grande.wav"
+            assert len(list((base / "musica").glob("*"))) == 1
     finally:
         shutil.rmtree(base, ignore_errors=True)

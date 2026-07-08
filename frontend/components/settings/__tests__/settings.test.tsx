@@ -171,11 +171,11 @@ describe('TranscriptionSettings — idioma/modelo (Req 9.3)', () => {
 // MusicUploader — volumen (Req 9.4) y rechazo de no-WAV (Req 9.7)
 // ---------------------------------------------------------------------------
 
-function wav(nombre = 'fondo.wav'): File {
-  return new File(['RIFF'], nombre, { type: 'audio/wav' });
+function audio(nombre = 'fondo.wav', type = 'audio/wav'): File {
+  return new File(['RIFF'], nombre, { type });
 }
-function noWav(nombre = 'fondo.mp3'): File {
-  return new File(['x'], nombre, { type: 'audio/mpeg' });
+function noAudio(nombre = 'notas.txt'): File {
+  return new File(['x'], nombre, { type: 'text/plain' });
 }
 
 function seleccionarMusica(file: File): void {
@@ -183,15 +183,15 @@ function seleccionarMusica(file: File): void {
   fireEvent.change(input, { target: { files: [file] } });
 }
 
-describe('MusicUploader — rechazo de no-WAV (Req 9.7)', () => {
-  it('rechaza un archivo no-WAV indicando el formato requerido y no sube', () => {
+describe('MusicUploader — rechazo de formatos no de audio (Req 9.7)', () => {
+  it('rechaza un archivo no de audio indicando los formatos aceptados y no sube', () => {
     const onMusicaChange = vi.fn();
     render(<MusicUploader onMusicaChange={onMusicaChange} />);
 
-    seleccionarMusica(noWav('cancion.mp3'));
+    seleccionarMusica(noAudio('notas.txt'));
 
     const error = screen.getByTestId('error-formato');
-    expect(error).toHaveTextContent(/WAV/i);
+    expect(error).toHaveTextContent(/audio/i);
     expect(subirMusicaMock).not.toHaveBeenCalled();
     // Se notifica que no hay música válida cargada.
     expect(onMusicaChange).toHaveBeenCalledWith(
@@ -208,13 +208,32 @@ describe('MusicUploader — rechazo de no-WAV (Req 9.7)', () => {
     const onMusicaChange = vi.fn();
     render(<MusicUploader onMusicaChange={onMusicaChange} />);
 
-    seleccionarMusica(wav('fondo.wav'));
+    seleccionarMusica(audio('fondo.wav'));
 
     await waitFor(() => expect(subirMusicaMock).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('error-formato')).toBeNull();
     await screen.findByTestId('musica-cargada');
     expect(onMusicaChange).toHaveBeenCalledWith(
       expect.objectContaining({ musicaId: 'mus_1' }),
+    );
+  });
+
+  it('acepta un MP3, lo sube y notifica el musica_id (formato de audio común)', async () => {
+    subirMusicaMock.mockResolvedValueOnce({
+      musica_id: 'mus_2',
+      nombre_original: 'cancion.mp3',
+      duracion_s: 30,
+    });
+    const onMusicaChange = vi.fn();
+    render(<MusicUploader onMusicaChange={onMusicaChange} />);
+
+    seleccionarMusica(audio('cancion.mp3', 'audio/mpeg'));
+
+    await waitFor(() => expect(subirMusicaMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('error-formato')).toBeNull();
+    await screen.findByTestId('musica-cargada');
+    expect(onMusicaChange).toHaveBeenCalledWith(
+      expect.objectContaining({ musicaId: 'mus_2' }),
     );
   });
 });

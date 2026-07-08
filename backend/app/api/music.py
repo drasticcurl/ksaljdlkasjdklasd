@@ -1,15 +1,23 @@
 """Endpoint de subida de música ``POST /musica`` (Req 8.1, 8.2).
 
-Recibe un archivo WAV vía ``multipart/form-data``, valida **formato** (WAV
-válido: extensión ``.wav`` y cabecera RIFF/WAVE) y **tamaño** (<= 100 MB), y lo
-almacena devolviendo un ``musica_id``. Si el archivo no es un WAV válido o supera
-el límite, se **rechaza** conservando el audio y el video originales sin
-modificar (Req 8.2): el rechazo ocurre antes de cualquier almacenamiento.
+Recibe un archivo de audio vía ``multipart/form-data``, valida **formato** (por
+extensión dentro de :data:`app.config.SUPPORTED_MUSIC_EXTENSIONS`) y **tamaño**
+(<= 100 MB), y lo almacena devolviendo un ``musica_id``. Si el archivo tiene una
+extensión no soportada o supera el límite, se **rechaza** conservando el audio y
+el video originales sin modificar (Req 8.2): el rechazo ocurre antes de cualquier
+almacenamiento.
+
+La aceptación se basa en la **extensión** y no en la cabecera del contenedor: la
+mezcla de música la realiza ffmpeg, que decodifica de forma nativa MP3, AAC/M4A,
+OGG/Opus, FLAC, etc. Validar aquí una cabecera RIFF/WAVE rechazaba archivos
+perfectamente reproducibles (por ejemplo, un MP3 con extensión ``.wav``); es
+ffmpeg quien valida de verdad el contenido al mezclar.
 
 Comportamiento (contrato del diseño):
 
 * **200 OK:** ``{"musica_id": ..., "nombre_original": ..., "duracion_s": null}``.
-* **415 INVALID_WAV:** el archivo no es un WAV válido (Req 8.2).
+* **415 UNSUPPORTED_AUDIO:** la extensión del archivo no es un formato de audio
+  soportado (Req 8.2).
 * **413 MUSIC_TOO_LARGE:** el archivo supera 100 MB (Req 8.2).
 
 Referencias de requisitos: 8.1, 8.2.
@@ -17,6 +25,7 @@ Referencias de requisitos: 8.1, 8.2.
 
 from __future__ import annotations
 
+import logging
 import os
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import JSONResponse
@@ -24,6 +33,8 @@ from fastapi.responses import JSONResponse
 from app import config
 from app.models.errors import error_envelope
 from app.storage.music_store import MusicStore, MusicStorageError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["musica"])
 
@@ -35,19 +46,24 @@ def obtener_music_store() -> MusicStore:
     return _music_store
 
 
-def _es_wav_valido(nombre: str, contenido: bytes) -> bool:
-    """Comprueba que el archivo sea un WAV válido (extensión + cabecera RIFF/WAVE).
+def _extension_soportada(nombre: str, tamano: int) -> bool:
+    """Comprueba que el archivo tenga una extensión de audio soportada (Req 8.2).
 
-    Un WAV canónico comienza con la firma ``RIFF`` (bytes 0..4), seguida del
-    tamaño y la firma ``WAVE`` (bytes 8..12). Se validan ambos para rechazar
-    archivos con extensión ``.wav`` pero contenido no-WAV (Req 8.2).
+    La validación es puramente por **extensión** (dentro de
+    :data:`app.config.SUPPORTED_MUSIC_EXTENSIONS`); el contenido real lo valida
+    ffmpeg en el paso de mezcla. Cuando se rechaza, se registra el nombre, el
+    tamaño y la extensión para poder diagnosticar futuros casos.
     """
     ext = os.path.splitext(nombre or "")[1].lower()
     if ext not in config.SUPPORTED_MUSIC_EXTENSIONS:
+        logger.warning(
+            "Rechazado audio %s (%d bytes): extensión %r no soportada",
+            nombre,
+            tamano,
+            ext,
+        )
         return False
-    if len(contenido) < 12:
-        return False
-    return contenido[0:4] == b"RIFF" and contenido[8:12] == b"WAVE"
+    return True
 
 
 @router.post("/musica")
@@ -55,7 +71,7 @@ async def subir_musica(
     file: UploadFile = File(...),
     store: MusicStore = Depends(obtener_music_store),
 ) -> JSONResponse:
-    """Sube y almacena el archivo WAV de música (Req 8.1, 8.2)."""
+    """Sube y almacena el archivo de audio de música (Req 8.1, 8.2)."""
     nombre = file.filename or "sin_nombre"
     contenido = await file.read()
 
@@ -70,14 +86,18 @@ async def subir_musica(
             ),
         )
 
-    # --- Validación de formato WAV (Req 8.2) ---
-    if not _es_wav_valido(nombre, contenido):
+    # --- Validación de formato por extensión (Req 8.2) ---
+    if not _extension_soportada(nombre, len(contenido)):
+        formatos = ", ".join(config.SUPPORTED_MUSIC_EXTENSIONS)
         return JSONResponse(
             status_code=415,
             content=error_envelope(
-                "INVALID_WAV",
-                "El archivo de música no es un WAV válido.",
-                {"nombre": nombre, "formato_requerido": "WAV (.wav)"},
+                "UNSUPPORTED_AUDIO",
+                (
+                    "El archivo de música no tiene un formato de audio soportado. "
+                    f"Formatos aceptados: {formatos}."
+                ),
+                {"nombre": nombre, "formatos_soportados": list(config.SUPPORTED_MUSIC_EXTENSIONS)},
             ),
         )
 

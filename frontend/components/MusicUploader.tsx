@@ -1,14 +1,15 @@
 'use client';
 
 /**
- * MusicUploader — Selección de música WAV y ajuste de volumen base (Req 8.1,
+ * MusicUploader — Selección de música (audio) y ajuste de volumen base (Req 8.1,
  * 9.4, 9.7).
  *
  * Responsabilidades:
- *   - Seleccionar un archivo WAV. Si el archivo no tiene formato WAV, rechazar
- *     la selección y mostrar un mensaje indicando el formato requerido (Req 9.7)
+ *   - Seleccionar un archivo de audio (WAV, MP3, AAC/M4A, OGG/Opus, FLAC, ...).
+ *     Si el archivo no tiene un formato de audio soportado, rechazar la
+ *     selección y mostrar un mensaje indicando los formatos aceptados (Req 9.7)
  *     sin intentar subirlo.
- *   - Subir el WAV a `POST /musica` mediante `api.subirMusica` (Req 8.1).
+ *   - Subir el archivo a `POST /musica` mediante `api.subirMusica` (Req 8.1).
  *   - Ajustar el volumen base de la música (0..100 %) (Req 9.4).
  *   - Notificar `musica_id` y el volumen base al contenedor vía callback.
  *
@@ -17,7 +18,15 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { subirMusica, ApiError } from '@/lib/api';
-import { RANGOS_UI, esArchivoWav, numeroEnRango } from './settings/ranges';
+import {
+  RANGOS_UI,
+  EXTENSIONES_AUDIO,
+  esArchivoAudio,
+  numeroEnRango,
+} from './settings/ranges';
+
+/** Valor del atributo `accept` del input: `audio/*` más las extensiones concretas. */
+const ACCEPT_AUDIO = ['audio/*', ...EXTENSIONES_AUDIO].join(',');
 
 export interface MusicUploaderProps {
   /**
@@ -58,10 +67,11 @@ export default function MusicUploader({
       setErrorEnvio(null);
       if (!file) return;
 
-      // Req 9.7: rechazar formatos no-WAV indicando el formato requerido.
-      if (!esArchivoWav(file.name)) {
+      // Req 9.7: rechazar formatos de audio no soportados indicando los aceptados.
+      if (!esArchivoAudio(file.name)) {
         setErrorFormato(
-          `"${file.name}": formato no válido. Se requiere un archivo WAV (.wav).`,
+          `"${file.name}": formato no válido. Se requiere un archivo de audio ` +
+            `(${EXTENSIONES_AUDIO.join(', ')}).`,
         );
         setMusicaId(null);
         setNombre(null);
@@ -114,14 +124,14 @@ export default function MusicUploader({
       </legend>
 
       <label className="flex flex-col gap-1 text-sm text-gray-300">
-        <span>Selecciona un archivo WAV</span>
+        <span>Selecciona un archivo de audio</span>
         <input
           ref={inputRef}
           type="file"
-          accept=".wav,audio/wav,audio/x-wav"
+          accept={ACCEPT_AUDIO}
           onChange={manejarSeleccion}
           data-testid="music-input"
-          aria-label="Seleccionar música WAV"
+          aria-label="Seleccionar música (archivo de audio)"
         />
       </label>
 

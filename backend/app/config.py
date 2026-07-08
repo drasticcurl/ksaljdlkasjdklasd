@@ -29,7 +29,7 @@ MB: int = 1024 * 1024
 # Tamaño máximo por clip de video: 500 MB (Req 1.4)
 MAX_CLIP_SIZE_BYTES: int = 500 * MB
 
-# Tamaño máximo del archivo WAV de música: 100 MB (Req 8.2)
+# Tamaño máximo del archivo de música: 100 MB (Req 8.2)
 MAX_MUSIC_SIZE_BYTES: int = 100 * MB
 
 # ---------------------------------------------------------------------------
@@ -55,8 +55,27 @@ SUPPORTED_VIDEO_EXTENSIONS: tuple[str, ...] = (
     ".avi",
 )
 
-# Formato de música soportado (Req 8.1, 8.2).
-SUPPORTED_MUSIC_EXTENSIONS: tuple[str, ...] = (".wav",)
+# Formatos de audio de música soportados (Req 8.1, 8.2).
+#
+# La mezcla de música se realiza con ffmpeg, que decodifica de forma nativa la
+# mayoría de formatos de audio comunes (MP3, AAC/M4A, OGG/Opus, FLAC, etc.). Por
+# eso la aceptación en la subida se basa en la **extensión** del archivo y se
+# delega la validación real del contenido a ffmpeg en el paso de mezcla: exigir
+# un contenedor WAV/RIFF rechazaba archivos perfectamente reproducibles (p. ej.
+# un MP3 con extensión .wav).
+SUPPORTED_MUSIC_EXTENSIONS: tuple[str, ...] = (
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".oga",
+    ".opus",
+    ".flac",
+    ".wma",
+    ".aiff",
+    ".aif",
+)
 
 # ---------------------------------------------------------------------------
 # Rutas del directorio de trabajo y de salida (Req 13.3)

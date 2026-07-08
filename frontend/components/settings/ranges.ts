@@ -133,7 +133,44 @@ export function colorValido(color: string): boolean {
   return HEX_COLOR_RE.test(color);
 }
 
-/** Verifica si un nombre de archivo corresponde a un WAV por su extensión (Req 9.7). */
-export function esArchivoWav(nombre: string): boolean {
-  return /\.wav$/i.test(nombre.trim());
+/**
+ * Extensiones de audio aceptadas por el backend (`POST /musica`). Deben
+ * mantenerse alineadas con `SUPPORTED_MUSIC_EXTENSIONS` de
+ * `backend/app/config.py`. La mezcla la realiza ffmpeg, que decodifica todos
+ * estos formatos; por eso se aceptan por extensión.
+ */
+export const EXTENSIONES_AUDIO: readonly string[] = [
+  '.wav',
+  '.mp3',
+  '.m4a',
+  '.aac',
+  '.ogg',
+  '.oga',
+  '.opus',
+  '.flac',
+  '.wma',
+  '.aiff',
+  '.aif',
+];
+
+/** Regex derivada de {@link EXTENSIONES_AUDIO} para validar por extensión. */
+const AUDIO_EXT_RE = new RegExp(
+  `(${EXTENSIONES_AUDIO.map((e) => e.replace('.', '\\.')).join('|')})$`,
+  'i',
+);
+
+/**
+ * Verifica si un nombre de archivo corresponde a un formato de audio soportado
+ * por su extensión (Req 9.7). Antes solo se aceptaba `.wav`, lo que rechazaba
+ * archivos de audio perfectamente válidos (MP3, AAC, OGG, FLAC, ...).
+ */
+export function esArchivoAudio(nombre: string): boolean {
+  return AUDIO_EXT_RE.test(nombre.trim());
 }
+
+/**
+ * Alias retrocompatible de {@link esArchivoAudio}. La política pasó de "solo
+ * WAV" a "formatos de audio comunes"; se conserva el nombre previo para no
+ * romper importaciones existentes.
+ */
+export const esArchivoWav = esArchivoAudio;
