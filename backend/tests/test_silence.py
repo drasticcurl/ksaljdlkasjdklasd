@@ -31,6 +31,7 @@ from app.engine.silence import (
     ValidadorSilencio,
     comando_auto_editor,
     cortar_silencios,
+    interpretar_codigo_salida,
 )
 from app.util.units import (
     UI_MARGEN_MS_MAX,
@@ -294,3 +295,62 @@ def test_comando_auto_editor_incluye_umbral_y_margen() -> None:
     assert comando[0] == "auto-editor"
     assert "audio:threshold=4%" in comando
     assert "0.2s" in comando
+
+
+# ---------------------------------------------------------------------------
+# Bugfix macOS "Killed: 9": interpretación del código de salida (señales)
+# ---------------------------------------------------------------------------
+def test_interpretar_codigo_247_es_sigkill() -> None:
+    """El código 247 (256 - 9) se interpreta como terminación por señal 9/SIGKILL."""
+    mensaje = interpretar_codigo_salida(247)
+    assert mensaje is not None
+    assert "9" in mensaje
+    assert "SIGKILL" in mensaje
+
+
+def test_interpretar_codigo_137_es_sigkill() -> None:
+    """El código 137 (128 + 9) también se interpreta como señal 9/SIGKILL."""
+    mensaje = interpretar_codigo_salida(137)
+    assert mensaje is not None
+    assert "9" in mensaje
+    assert "SIGKILL" in mensaje
+
+
+def test_interpretar_codigo_negativo_es_senal() -> None:
+    """Un código negativo (-9) se interpreta como señal 9 (convención subprocess)."""
+    mensaje = interpretar_codigo_salida(-9)
+    assert mensaje is not None
+    assert "9" in mensaje
+    assert "SIGKILL" in mensaje
+
+
+def test_interpretar_codigo_normal_devuelve_none() -> None:
+    """Un código de error "normal" (p. ej. 1) no se interpreta como señal."""
+    assert interpretar_codigo_salida(1) is None
+    assert interpretar_codigo_salida(0) is None
+    assert interpretar_codigo_salida(2) is None
+
+
+def test_motivo_incluye_senal_para_codigo_247_sin_salida() -> None:
+    """Con returncode=247 y stderr/stdout vacíos, el motivo menciona la señal.
+
+    Reproduce el escenario real de macOS: auto-editor muere por SIGKILL sin
+    producir diagnóstico. El motivo del error debe incluir el código (247) y la
+    interpretación de la señal (palabra "señal" o "SIGKILL")."""
+
+    def runner(args: Sequence[str]) -> ResultadoComando:
+        return ResultadoComando(returncode=247, stdout="", stderr="", args=list(args))
+
+    with pytest.raises(SilenceProcessingError) as info:
+        cortar_silencios(
+            "unido.mp4",
+            "cortado.mp4",
+            activado=True,
+            umbral_db=-30.0,
+            margen_ms=200,
+            runner=runner,
+        )
+
+    mensaje = str(info.value)
+    assert "247" in mensaje
+    assert "señal" in mensaje or "SIGKILL" in mensaje

@@ -25,13 +25,16 @@ Referencias de requisitos: 4.1, 4.2, 4.3, 4.4, 4.5.
 from __future__ import annotations
 
 import logging
+import os
+import shutil
+import sys
 from pathlib import Path
 from typing import List, Optional, Union
 
 import errno
 
 from app import config
-from app.deps.path_setup import asegurar_permisos_auto_editor
+from app.deps.path_setup import preparar_auto_editor
 from app.engine.proc import Runner, ejecutar_comando
 from app.util.units import (
     UI_MARGEN_MS_MAX,
@@ -53,6 +56,21 @@ _PISTA_PERMISOS: str = (
     "`pip install --force-reinstall auto-editor` o verifica permisos"
 )
 
+# Guía accionable cuando macOS mata el binario de auto-editor (señal 9 / SIGKILL).
+# Es el síntoma típico de un binario compilado sin firmar, en cuarentena o con
+# firma inválida en macOS (Gatekeeper): el proceso muere sin stdout/stderr.
+_GUIA_KILLED_MACOS: str = (
+    "macOS terminó el binario de auto-editor con la señal 9 (SIGKILL); suele "
+    "deberse a un binario sin firmar, en cuarentena o con firma inválida "
+    "(Gatekeeper). Pasos para resolverlo:\n"
+    "  1. Quitar la cuarentena del paquete: "
+    "`xattr -dr com.apple.quarantine <venv>/lib/python*/site-packages/auto_editor`\n"
+    "  2. Re-firmar ad-hoc: "
+    "`codesign --force --deep --sign - <ruta del binario de auto-editor>`\n"
+    "  3. Reinstalar auto-editor: `pip install --force-reinstall auto-editor`\n"
+    "  4. O desactivar \"Cortar silencios\" en la interfaz para omitir este paso."
+)
+
 # Límite de caracteres de la salida de auto-editor que se incluye en el motivo
 # del error, para no desbordar el mensaje del Job ni los logs.
 _MAX_DETALLE_SALIDA: int = 1500
@@ -68,6 +86,67 @@ def _recortar_salida(texto: str, limite: int = _MAX_DETALLE_SALIDA) -> str:
     if len(texto) <= limite:
         return texto
     return "...(recortado)... " + texto[-limite:]
+
+
+# Nombres legibles de las señales POSIX más relevantes al diagnosticar la
+# terminación abrupta de un proceso hijo.
+_NOMBRES_SENALES: dict[int, str] = {
+    2: "SIGINT",
+    6: "SIGABRT",
+    9: "SIGKILL",
+    11: "SIGSEGV",
+    15: "SIGTERM",
+}
+
+
+def interpretar_codigo_salida(rc: int) -> Optional[str]:
+    """Interpreta un ``returncode`` que probablemente indica muerte por señal.
+
+    Un proceso terminado por una señal no produce necesariamente stdout/stderr,
+    por lo que el único indicio del fallo es su código de salida. Esta función
+    reconoce las dos convenciones habituales para codificar la señal en el código
+    de salida:
+
+    * ``rc < 0``: la señal es ``-rc`` (convención de :mod:`subprocess` en POSIX).
+    * ``rc > 128``: se consideran dos codificaciones y se detecta la señal:
+        - ``256 - rc`` (p. ej. ``247`` -> ``9``), y
+        - ``rc - 128`` (p. ej. ``137`` -> ``9``).
+      Si cualquiera de las dos apunta a la señal 9, se interpreta como SIGKILL.
+
+    Args:
+        rc: El ``returncode`` devuelto por el proceso.
+
+    Returns:
+        Una descripción legible cuando el código sugiere terminación por señal, o
+        ``None`` para códigos de error "normales" (1..128 que no sean 137).
+    """
+    # Convención de subprocess en POSIX: código negativo => señal -rc.
+    if rc < 0:
+        senal = -rc
+        return _describir_senal(senal)
+
+    # Códigos > 128 suelen codificar la señal que terminó el proceso.
+    if rc > 128:
+        candidatos = {256 - rc, rc - 128}
+        # Prioriza SIGKILL (9) si alguna convención lo indica.
+        if 9 in candidatos:
+            return _describir_senal(9)
+        # Si no es 9, usa la convención estándar shell (128 + señal).
+        senal = rc - 128
+        if 0 < senal < 128:
+            return _describir_senal(senal)
+        return None
+
+    # Códigos "normales" (incluido 0 y 1..128): sin interpretación de señal.
+    return None
+
+
+def _describir_senal(senal: int) -> str:
+    """Devuelve una descripción legible de la terminación por ``senal``."""
+    nombre = _NOMBRES_SENALES.get(senal)
+    if nombre:
+        return f"el proceso terminó por señal {senal} ({nombre})"
+    return f"el proceso terminó por señal {senal}"
 
 
 class SilenceValidationError(ValueError):
@@ -263,11 +342,19 @@ def cortar_silencios(
     margen_s = margen_ms_a_s(margen_efectivo)
 
     # Defensa ante binarios de auto-editor empaquetados sin bit de ejecución
-    # ([Errno 13] Permission denied). Idempotente y tolerante a fallos.
-    asegurar_permisos_auto_editor()
+    # ([Errno 13] Permission denied) y, en macOS, ante binarios en cuarentena o
+    # sin firma que el sistema mata con SIGKILL. Idempotente y tolerante a fallos.
+    preparar_auto_editor()
 
     salida_path = Path(salida)
     comando = comando_auto_editor(str(entrada_path), str(salida_path), umbral_pct, margen_s)
+
+    # Diagnóstico previo: rutas resueltas de las herramientas y del archivo de
+    # entrada. Ayuda a distinguir "binario ausente" de "binario que muere".
+    logger.info("auto-editor resuelto en: %s", shutil.which("auto-editor") or "(no encontrado)")
+    logger.info("ffmpeg resuelto en: %s", shutil.which("ffmpeg") or "(no encontrado)")
+    _loguear_archivo_entrada(entrada_path)
+
     # Loguea el comando EXACTO (argv completo) antes de ejecutarlo, para poder
     # reproducir manualmente la invocación al diagnosticar fallos.
     logger.info("Ejecutando auto-editor: %s", " ".join(comando))
@@ -291,10 +378,17 @@ def cortar_silencios(
         stderr_texto = (resultado.stderr or "").strip()
         stdout_texto = (resultado.stdout or "").strip()
 
-        # Loguea la salida COMPLETA a nivel error para diagnóstico sin recortes.
+        # Interpretación del código de salida: si el proceso murió por señal
+        # (p. ej. 247 -> SIGKILL en macOS), añade esa lectura al diagnóstico.
+        interpretacion = interpretar_codigo_salida(resultado.returncode)
+        es_sigkill = interpretacion is not None and "señal 9" in interpretacion
+
+        # Loguea la salida COMPLETA a nivel error para diagnóstico sin recortes,
+        # incluida la interpretación del código de salida cuando aplica.
         logger.error(
-            "auto-editor falló (código %s). Comando: %s\nstderr:\n%s\nstdout:\n%s",
+            "auto-editor falló (código %s)%s. Comando: %s\nstderr:\n%s\nstdout:\n%s",
             resultado.returncode,
+            f" — {interpretacion}" if interpretacion else "",
             " ".join(comando),
             stderr_texto or "(vacío)",
             stdout_texto or "(vacío)",
@@ -305,25 +399,50 @@ def cortar_silencios(
         fuente = stderr_texto or stdout_texto
         detalle = _recortar_salida(fuente) if fuente else ""
 
+        # Sufijo con la interpretación del código de salida (SIEMPRE que aplique)
+        # y, si fue SIGKILL en macOS, la guía accionable específica.
+        sufijo_senal = f" ({interpretacion})" if interpretacion else ""
+        if es_sigkill and sys.platform == "darwin":
+            sufijo_senal += f". {_GUIA_KILLED_MACOS}"
+
         # auto-editor puede reportar el fallo de permisos en su salida (sin lanzar
         # excepción): p. ej. "[Errno 13] Permission denied". Añade la pista.
         fuente_lower = fuente.lower()
         if "errno 13" in fuente_lower or "permission denied" in fuente_lower:
             raise SilenceProcessingError(
                 f"auto-editor falló (código {resultado.returncode}): {detalle}. "
-                f"{_PISTA_PERMISOS}"
+                f"{_PISTA_PERMISOS}{sufijo_senal}"
             )
 
         if detalle:
             raise SilenceProcessingError(
-                f"auto-editor falló (código {resultado.returncode}): {detalle}"
+                f"auto-editor falló (código {resultado.returncode}): "
+                f"{detalle}{sufijo_senal}"
             )
         raise SilenceProcessingError(
             f"auto-editor falló (código {resultado.returncode}): "
-            "sin salida de diagnóstico (stderr y stdout vacíos)"
+            f"sin salida de diagnóstico (stderr y stdout vacíos){sufijo_senal}"
         )
 
     return salida_path
+
+
+def _loguear_archivo_entrada(entrada_path: Path) -> None:
+    """Loguea a INFO la existencia y el tamaño del archivo de entrada.
+
+    Es tolerante a fallos: cualquier error del sistema de archivos se reduce a un
+    aviso, sin interrumpir el flujo del corte de silencios.
+    """
+    ruta = str(entrada_path)
+    try:
+        existe = os.path.exists(ruta)
+        if existe:
+            tamano = os.path.getsize(ruta)
+            logger.info("Archivo de entrada %s existe (%d bytes)", ruta, tamano)
+        else:
+            logger.info("Archivo de entrada %s NO existe", ruta)
+    except OSError as exc:  # pragma: no cover - defensivo
+        logger.warning("No se pudo inspeccionar el archivo de entrada %s: %s", ruta, exc)
 
 
 __all__ = [
@@ -333,4 +452,5 @@ __all__ = [
     "ValidadorSilencio",
     "comando_auto_editor",
     "cortar_silencios",
+    "interpretar_codigo_salida",
 ]

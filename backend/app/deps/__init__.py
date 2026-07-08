@@ -14,14 +14,21 @@ from app.deps.checker import (
     ResultadoVerificacion,
     verificar_dependencias,
 )
-from app.deps.path_setup import asegurar_path_local, asegurar_permisos_auto_editor
+from app.deps.path_setup import (
+    asegurar_confianza_auto_editor_macos,
+    asegurar_path_local,
+    asegurar_permisos_auto_editor,
+    preparar_auto_editor,
+)
 
 __all__ = [
     "DEPENDENCIAS",
     "DependenciasFaltantesError",
     "ResultadoDependencia",
     "ResultadoVerificacion",
+    "asegurar_confianza_auto_editor_macos",
     "asegurar_path_local",
     "asegurar_permisos_auto_editor",
+    "preparar_auto_editor",
     "verificar_dependencias",
 ]

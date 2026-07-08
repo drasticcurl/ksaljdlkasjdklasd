@@ -38,6 +38,7 @@ from app.engine.pipeline import (
     ORDEN_PASOS,
     ejecutar_pipeline,
 )
+from app.engine.silence import SilenceProcessingError
 from app.jobs.manager import JobManager
 from app.jobs.runner import JobRunner
 from app.models.job import JobStatus, PipelineStep
@@ -379,6 +380,88 @@ def test_pipeline_omite_musica_sin_wav() -> None:
         assert resultado.exito is True
         assert PipelineStep.MUSICA.value not in recorder
         assert recorder == [p.value for p in ORDEN_PASOS[:4]]
+
+
+# ---------------------------------------------------------------------------
+# Bugfix macOS "Killed: 9": fail-soft opcional del corte de silencios
+# (VSE_SILENCE_FAILSOFT). Solo afecta al paso CORTAR_SILENCIOS.
+# ---------------------------------------------------------------------------
+def _fakes_con_cortar_que_falla(recorder: List[str]) -> Dict[str, object]:
+    """Como ``_construir_fakes`` pero con un ``fn_cortar`` que lanza
+    :class:`SilenceProcessingError` (simula el fallo de auto-editor)."""
+    fakes = _construir_fakes(recorder=recorder, fallo_en=None)
+
+    def fn_cortar(entrada, salida, **kw):  # noqa: ANN001
+        recorder.append(PipelineStep.CORTAR_SILENCIOS.value)
+        raise SilenceProcessingError(
+            "auto-editor falló (código 247): sin salida de diagnóstico "
+            "(el proceso terminó por señal 9 (SIGKILL))"
+        )
+
+    fakes["fn_cortar"] = fn_cortar
+    return fakes
+
+
+def test_failsoft_activo_continua_sin_recortar(monkeypatch) -> None:
+    """Con VSE_SILENCE_FAILSOFT=1, si el corte de silencios falla el pipeline
+    continúa (usando el input del paso) y ejecuta los pasos siguientes."""
+    monkeypatch.setenv("VSE_SILENCE_FAILSOFT", "1")
+    with isolated_config_dirs():
+        recorder: List[str] = []
+        fakes = _fakes_con_cortar_que_falla(recorder)
+        job_wd = JobWorkdir("job-failsoft-on")
+
+        resultado = ejecutar_pipeline(
+            job_wd, ["a", "b"], _ajustes_con_musica(),
+            musica_wav="musica.wav", **fakes,
+        )
+
+        # El pipeline termina con éxito pese al fallo del corte de silencios.
+        assert resultado.exito is True
+        assert resultado.ruta_video_final == job_wd.output_path
+        # Se intentó el corte y, tras el fallo, se ejecutaron los pasos siguientes.
+        assert recorder == [p.value for p in ORDEN_PASOS]
+
+
+def test_failsoft_inactivo_falla_como_siempre(monkeypatch) -> None:
+    """Sin VSE_SILENCE_FAILSOFT (o "0"), el fallo del corte de silencios marca el
+    pipeline como fallido en CORTAR_SILENCIOS y no ejecuta pasos posteriores."""
+    monkeypatch.setenv("VSE_SILENCE_FAILSOFT", "0")
+    with isolated_config_dirs():
+        recorder: List[str] = []
+        fakes = _fakes_con_cortar_que_falla(recorder)
+        job_wd = JobWorkdir("job-failsoft-off")
+
+        resultado = ejecutar_pipeline(
+            job_wd, ["a", "b"], _ajustes_con_musica(),
+            musica_wav="musica.wav", **fakes,
+        )
+
+        # Comportamiento por defecto (Req 10.7): Job fallido en CORTAR_SILENCIOS.
+        assert resultado.exito is False
+        assert resultado.paso_fallido == PipelineStep.CORTAR_SILENCIOS
+        # No se ejecutó ningún paso posterior a CORTAR_SILENCIOS.
+        assert recorder == [
+            PipelineStep.UNIR.value,
+            PipelineStep.CORTAR_SILENCIOS.value,
+        ]
+
+
+def test_failsoft_ausente_falla_como_siempre(monkeypatch) -> None:
+    """Sin la variable de entorno definida, el comportamiento es el por defecto
+    (fallo del Job en CORTAR_SILENCIOS)."""
+    monkeypatch.delenv("VSE_SILENCE_FAILSOFT", raising=False)
+    with isolated_config_dirs():
+        recorder: List[str] = []
+        fakes = _fakes_con_cortar_que_falla(recorder)
+        job_wd = JobWorkdir("job-failsoft-ausente")
+
+        resultado = ejecutar_pipeline(
+            job_wd, ["a"], _ajustes_con_musica(), musica_wav=None, **fakes,
+        )
+
+        assert resultado.exito is False
+        assert resultado.paso_fallido == PipelineStep.CORTAR_SILENCIOS
 
 
 def test_pipeline_omite_musica_sin_ajustes() -> None:

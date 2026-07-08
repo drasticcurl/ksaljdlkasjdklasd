@@ -39,13 +39,15 @@ from typing import AsyncIterator, List
 # desde la GUI (doble clic) el PATH de Homebrew puede no estar presente; esto lo
 # corrige de forma idempotente para que tanto la verificación de dependencias
 # como los subprocess posteriores hereden el PATH correcto.
-from app.deps import asegurar_path_local, asegurar_permisos_auto_editor
+from app.deps import asegurar_path_local, preparar_auto_editor
 
 asegurar_path_local()
-# Algunos empaquetados de auto_editor dejan su binario sin bit de ejecución, lo
-# que provoca un "[Errno 13] Permission denied" al cortar silencios. Se corrige
-# de forma idempotente y tolerante a fallos en el arranque.
-asegurar_permisos_auto_editor()
+# Algunos empaquetados de auto_editor dejan su binario sin bit de ejecución
+# ("[Errno 13] Permission denied") y, en macOS, sin firmar o en cuarentena, lo
+# que hace que el sistema lo mate con SIGKILL ("Killed: 9", código 247). Se
+# corrige de forma idempotente y tolerante a fallos en el arranque (chmod +x y,
+# en macOS, xattr/codesign best-effort).
+preparar_auto_editor()
 
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
