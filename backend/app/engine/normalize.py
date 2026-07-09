@@ -336,6 +336,7 @@ from app.engine.ffprobe import (  # noqa: E402
     inspeccionar_clip,
 )
 from app.engine.proc import Runner, ejecutar_comando  # noqa: E402
+from app.models.settings import AjustesTransiciones  # noqa: E402
 from app.storage.workdir import JobWorkdir  # noqa: E402
 
 # Nombre del artefacto de video unido resultante del Paso 1.
@@ -450,6 +451,241 @@ def comando_concatenar(concat_txt: str, salida: str) -> List[str]:
     ]
 
 
+# ===========================================================================
+# TRANSICIONES ENTRE CLIPS (xfade + acrossfade)
+#
+# Alternativa al corte duro (demuxer ``concat`` con ``-c copy``): cuando el
+# usuario elige una transición, los clips normalizados (mismo códec/resolución/
+# fps) se solapan ``duracion`` segundos con el filtro ``xfade`` (video) y
+# ``acrossfade`` (audio). Requiere recodificar en la unión.
+#
+# Las funciones de cálculo del filtro y los offsets son PURAS (sin ffmpeg) para
+# poder testearlas directamente; la ejecución mide la duración de cada
+# intermedio con ffprobe y construye el ``filter_complex``.
+# ===========================================================================
+
+# Mapeo de los tipos de transición de la UI a los nombres del filtro ``xfade``.
+# ``"ninguna"`` no tiene equivalente (se usa el corte duro).
+_TRANSICIONES_XFADE: dict = {
+    "disolucion": "fade",
+    "fundido_negro": "fadeblack",
+    "deslizar_izq": "slideleft",
+    "deslizar_arriba": "slideup",
+}
+
+
+def nombre_transicion_xfade(tipo: str) -> _Optional[str]:
+    """Traduce un ``tipo`` de transición de la UI al nombre del filtro ``xfade``.
+
+    Args:
+        tipo: Tipo de transición (``disolucion``, ``fundido_negro``, ...).
+
+    Returns:
+        El nombre de la transición de ``xfade``, o ``None`` para ``"ninguna"`` o
+        un tipo no reconocido (en cuyo caso el motor debe usar el corte duro).
+    """
+    return _TRANSICIONES_XFADE.get(tipo)
+
+
+def _fmt_num(valor: float) -> str:
+    """Formatea un número para la línea de comando sin ceros/comas innecesarios."""
+    redondeado = round(float(valor), 4)
+    if redondeado == int(redondeado):
+        return str(int(redondeado))
+    return ("%.4f" % redondeado).rstrip("0").rstrip(".")
+
+
+def calcular_offsets_xfade(
+    duraciones: Sequence[float], duracion_s: float
+) -> List[float]:
+    """Calcula los ``offset`` de cada ``xfade`` encadenado (lógica PURA).
+
+    Para ``n`` clips hay ``n-1`` transiciones. Al encadenar, cada ``xfade``
+    solapa ``duracion_s`` segundos, por lo que la línea de tiempo acumulada se
+    acorta ``duracion_s`` en cada fusión. El ``offset`` de la transición ``j``
+    (``j = 1..n-1``, que fusiona el acumulado con el clip ``j``) es::
+
+        offset_j = (suma de duraciones de los clips 0..j-1) - j * duracion_s
+
+    Args:
+        duraciones: Duración en segundos de cada clip (en orden).
+        duracion_s: Duración de la transición en segundos.
+
+    Returns:
+        Lista de ``n-1`` offsets (vacía si hay menos de 2 clips).
+    """
+    offsets: List[float] = []
+    acumulado = 0.0
+    for j in range(1, len(duraciones)):
+        acumulado += float(duraciones[j - 1])
+        offsets.append(acumulado - j * float(duracion_s))
+    return offsets
+
+
+def construir_filtro_transiciones(
+    n: int, transicion: str, duracion_s: float, offsets: Sequence[float]
+) -> str:
+    """Construye el ``filter_complex`` de ``xfade``/``acrossfade`` (lógica PURA).
+
+    Encadena ``n-1`` filtros ``xfade`` para el video y ``n-1`` ``acrossfade`` para
+    el audio, produciendo las etiquetas finales ``[vout]`` y ``[aout]``.
+
+    Args:
+        n: Número de clips (entradas). Debe ser >= 2.
+        transicion: Nombre de la transición de ``xfade`` (p. ej. ``fade``).
+        duracion_s: Duración de la transición en segundos.
+        offsets: Offsets calculados por :func:`calcular_offsets_xfade`
+            (``n-1`` elementos).
+
+    Returns:
+        La cadena del ``filter_complex``.
+
+    Raises:
+        ValueError: Si ``n < 2`` o el número de offsets no es ``n-1``.
+    """
+    if n < 2:
+        raise ValueError("se requieren al menos 2 clips para una transición")
+    if len(offsets) != n - 1:
+        raise ValueError("se esperaban %d offsets, se recibieron %d" % (n - 1, len(offsets)))
+
+    d = _fmt_num(duracion_s)
+    segmentos: List[str] = []
+
+    # Cadena de video con xfade.
+    prev_v = "[0:v]"
+    for j in range(1, n):
+        salida_v = "[vout]" if j == n - 1 else "[v%d]" % j
+        segmentos.append(
+            "%s[%d:v]xfade=transition=%s:duration=%s:offset=%s%s"
+            % (prev_v, j, transicion, d, _fmt_num(offsets[j - 1]), salida_v)
+        )
+        prev_v = salida_v
+
+    # Cadena de audio con acrossfade (no usa offset: cruza fin/inicio).
+    prev_a = "[0:a]"
+    for j in range(1, n):
+        salida_a = "[aout]" if j == n - 1 else "[a%d]" % j
+        segmentos.append("%s[%d:a]acrossfade=d=%s%s" % (prev_a, j, d, salida_a))
+        prev_a = salida_a
+
+    return ";".join(segmentos)
+
+
+def comando_unir_con_transiciones(
+    intermedios: Sequence[str],
+    salida: str,
+    transicion: str,
+    duracion_s: float,
+    offsets: Sequence[float],
+    fps: int,
+) -> List[str]:
+    """Construye el comando ffmpeg que une los intermedios aplicando transiciones.
+
+    A diferencia del corte duro (``concat`` + ``-c copy``), aquí se recodifica
+    porque los clips se solapan mediante ``xfade``/``acrossfade``.
+
+    Args:
+        intermedios: Rutas de los clips normalizados (homogéneos), en orden.
+        salida: Ruta del video unido a producir.
+        transicion: Nombre de la transición de ``xfade``.
+        duracion_s: Duración de la transición en segundos.
+        offsets: Offsets de cada ``xfade``.
+        fps: Cuadros por segundo objetivo.
+
+    Returns:
+        La lista de argumentos del comando ffmpeg.
+    """
+    args: List[str] = ["ffmpeg", "-y"]
+    for ruta in intermedios:
+        args += ["-i", str(ruta)]
+    filtro = construir_filtro_transiciones(len(intermedios), transicion, duracion_s, offsets)
+    args += [
+        "-filter_complex",
+        filtro,
+        "-map",
+        "[vout]",
+        "-map",
+        "[aout]",
+        "-r",
+        str(int(fps)),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        str(salida),
+    ]
+    return args
+
+
+def _probar_duracion(ruta: str, runner: Runner) -> float:
+    """Obtiene la duración (segundos) de un medio con ``ffprobe``.
+
+    Args:
+        ruta: Ruta del medio a inspeccionar.
+        runner: Ejecutor de comandos inyectable.
+
+    Returns:
+        La duración en segundos.
+
+    Raises:
+        NormalizacionError: Si ffprobe falla o su salida no es numérica.
+    """
+    comando = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        ruta,
+    ]
+    try:
+        resultado = runner(comando)
+    except OSError as exc:
+        raise NormalizacionError(ruta, f"no se pudo ejecutar ffprobe (duración): {exc}") from exc
+    if resultado.returncode != 0:
+        detalle = (resultado.stderr or "").strip() or "código de salida distinto de cero"
+        raise NormalizacionError(ruta, f"ffprobe falló al medir la duración: {detalle}")
+    texto = (resultado.stdout or "").strip()
+    try:
+        return float(texto)
+    except (ValueError, TypeError) as exc:
+        raise NormalizacionError(ruta, f"duración de ffprobe ilegible: {texto!r}") from exc
+
+
+def _duracion_transicion_efectiva(duraciones: Sequence[float], duracion_ms: float) -> float:
+    """Acota la duración de la transición para que no supere los clips.
+
+    Un ``xfade`` cuya duración iguale o supere la del clip más corto produce
+    offsets negativos o solapes inválidos. Se acota la duración a un poco menos
+    de la mitad del clip más corto (y a un mínimo positivo) para mantener la
+    línea de tiempo consistente.
+
+    Args:
+        duraciones: Duraciones de los clips en segundos.
+        duracion_ms: Duración de transición deseada en milisegundos.
+
+    Returns:
+        La duración de transición efectiva en segundos (> 0).
+    """
+    deseada = max(0.0, float(duracion_ms) / 1000.0)
+    if not duraciones:
+        return deseada
+    min_clip = min(float(d) for d in duraciones)
+    # Deja margen: la transición no debe superar ~la mitad del clip más corto.
+    tope = max(0.1, min_clip * 0.5)
+    return min(deseada, tope) if deseada > 0 else 0.0
+
+
 def unir_clips(
     job: JobWorkdir,
     rutas_clips: Sequence[str],
@@ -458,6 +694,8 @@ def unir_clips(
     fps: int,
     runner: Runner = ejecutar_comando,
     inspector: Inspector = inspeccionar_clip,
+    *,
+    transiciones: _Optional[AjustesTransiciones] = None,
 ) -> _Path:
     """Ejecuta el Paso 1 (UNIR): normaliza cada clip y concatena en orden (Req 3).
 
@@ -484,6 +722,10 @@ def unir_clips(
         fps: Cuadros por segundo objetivo compartido.
         runner: Ejecutor de comandos ffmpeg inyectable.
         inspector: Inspector de clips inyectable (por defecto, ffprobe real).
+        transiciones: Ajustes de transición entre clips. Si es ``None`` o su
+            ``tipo`` es ``"ninguna"`` (o hay menos de 2 clips) se usa el corte
+            duro (``concat`` + ``-c copy``); en caso contrario se unen con
+            ``xfade``/``acrossfade`` (recodifica).
 
     Returns:
         La ruta del video unido (``unido.mp4``) dentro del workdir.
@@ -526,13 +768,38 @@ def unir_clips(
             raise NormalizacionError(ruta, f"normalización falló: {detalle}")
         intermedios.append(salida)
 
-    # (3) Concatenación en el orden del usuario (Propiedad 5 / Req 3.4).
+    # (3) Unión en el orden del usuario (Propiedad 5 / Req 3.4).
+    unido = job.resolve(NOMBRE_UNIDO)
+
+    # (3a) Transiciones (opcional): si se pidió un efecto válido y hay >= 2 clips,
+    # se unen con xfade/acrossfade (recodifica) en lugar del corte duro.
+    tipo_transicion = getattr(transiciones, "tipo", "ninguna") if transiciones is not None else "ninguna"
+    nombre_xfade = nombre_transicion_xfade(tipo_transicion)
+    if nombre_xfade is not None and len(intermedios) >= 2:
+        duraciones = [_probar_duracion(str(p), runner) for p in intermedios]
+        duracion_ms = getattr(transiciones, "duracion_ms", 400)
+        duracion_s = _duracion_transicion_efectiva(duraciones, duracion_ms)
+        offsets = calcular_offsets_xfade(duraciones, duracion_s)
+        comando_tr = comando_unir_con_transiciones(
+            [str(p) for p in intermedios], str(unido), nombre_xfade, duracion_s, offsets, fps
+        )
+        try:
+            resultado = runner(comando_tr)
+        except OSError as exc:
+            raise NormalizacionError(
+                None, f"no se pudo ejecutar ffmpeg (transiciones): {exc}"
+            ) from exc
+        if resultado.returncode != 0:
+            detalle = (resultado.stderr or "").strip() or "código de salida distinto de cero"
+            raise NormalizacionError(None, f"unión con transiciones falló: {detalle}")
+        return unido
+
+    # (3b) Corte duro (comportamiento por defecto): demuxer concat + copy.
     concat_txt = job.resolve(NOMBRE_CONCAT_TXT)
     concat_txt.write_text(
         contenido_concat_txt([str(p) for p in intermedios]), encoding="utf-8"
     )
 
-    unido = job.resolve(NOMBRE_UNIDO)
     comando_concat = comando_concatenar(str(concat_txt), str(unido))
     try:
         resultado = runner(comando_concat)
@@ -553,4 +820,8 @@ __all__ += [
     "comando_normalizar_clip",
     "comando_concatenar",
     "unir_clips",
+    "nombre_transicion_xfade",
+    "calcular_offsets_xfade",
+    "construir_filtro_transiciones",
+    "comando_unir_con_transiciones",
 ]

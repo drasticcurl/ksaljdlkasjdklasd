@@ -103,6 +103,28 @@ class JobManager:
             job.actualizado_en = _ahora()
             return job
 
+    def marcar_esperando_revision(
+        self,
+        job_id: str,
+        cortado_path: str,
+        grupos: object,
+    ) -> JobState:
+        """Pausa el Job en ``ESPERANDO_REVISION`` para la revisión manual de subtítulos.
+
+        Almacena la ruta del video ``cortado`` (sobre el que se quemarán los
+        subtítulos al reanudar) y los ``grupos`` de subtítulo propuestos para
+        editar. El porcentaje/índice de paso alcanzados se conservan (la fase 2
+        del pipeline los continuará), respetando la monotonicidad (Req 10.5).
+        """
+        with self._lock:
+            job = self._exigir(job_id)
+            job.cortado_path = cortado_path
+            job.grupos_subtitulos = list(grupos) if grupos is not None else []
+            job.progreso.estado = JobStatus.ESPERANDO_REVISION
+            job.progreso.mensaje = "Esperando revisión de subtítulos"
+            job.actualizado_en = _ahora()
+            return job
+
     def marcar_completado(
         self, job_id: str, ruta_video_final: Optional[str] = None
     ) -> JobState:

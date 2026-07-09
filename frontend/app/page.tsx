@@ -16,19 +16,23 @@
  * Requisitos: 2.3, 9.5, 10.6, 11.1.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import ClipUploader from '@/components/ClipUploader';
 import ClipList from '@/components/ClipList';
 import MusicUploader from '@/components/MusicUploader';
 import GeneralSettings from '@/components/settings/GeneralSettings';
 import SilenceSettings from '@/components/settings/SilenceSettings';
+import TransitionSettings from '@/components/settings/TransitionSettings';
 import TranscriptionSettings from '@/components/settings/TranscriptionSettings';
 import SubtitleSettings from '@/components/settings/SubtitleSettings';
+import SettingsActions from '@/components/settings/SettingsActions';
 import ProcessButton from '@/components/ProcessButton';
 import ProgressPanel from '@/components/ProgressPanel';
 import ResultPreview from '@/components/ResultPreview';
+import SubtitleReview from '@/components/SubtitleReview';
 import type { Clip, JobProgress } from '@/lib/types';
 import { AJUSTES_POR_DEFECTO, MUSICA_POR_DEFECTO } from '@/lib/defaults';
+import { obtenerConfiguracion } from '@/lib/api';
 
 export default function EditorPage() {
   const [clips, setClips] = useState<Clip[]>([]);
@@ -36,6 +40,23 @@ export default function EditorPage() {
   const [musicaId, setMusicaId] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [completado, setCompletado] = useState(false);
+  const [progresoActual, setProgresoActual] = useState<JobProgress | null>(null);
+
+  // Al abrir la app, cargar los ajustes por defecto guardados (JSON local del
+  // backend). Si no hay o falla, se conservan los valores de fábrica.
+  useEffect(() => {
+    let cancelado = false;
+    obtenerConfiguracion()
+      .then((res) => {
+        if (!cancelado && res.ajustes) setAjustes(res.ajustes);
+      })
+      .catch(() => {
+        // Silencioso: sin configuración guardada se usan los de fábrica.
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   /** Reindexa la lista de clips para que `posicion` sea 1..n. */
   const reindexar = useCallback(
@@ -82,6 +103,12 @@ export default function EditorPage() {
   const manejarJobIniciado = useCallback((nuevoJobId: string) => {
     setJobId(nuevoJobId);
     setCompletado(false);
+    setProgresoActual(null);
+  }, []);
+
+  /** Restablece los ajustes a los valores de fábrica (tras borrar el guardado). */
+  const manejarRestablecer = useCallback(() => {
+    setAjustes(AJUSTES_POR_DEFECTO);
   }, []);
 
   /** Marca el Job como completado para mostrar la previsualización (Req 11.1). */
@@ -142,6 +169,13 @@ export default function EditorPage() {
             onChange={(silencios) => setAjustes((p) => ({ ...p, silencios }))}
           />
 
+          <TransitionSettings
+            valor={ajustes.transiciones}
+            onChange={(transiciones) =>
+              setAjustes((p) => ({ ...p, transiciones }))
+            }
+          />
+
           <TranscriptionSettings
             valor={ajustes.transcripcion}
             onChange={(transcripcion) =>
@@ -163,6 +197,13 @@ export default function EditorPage() {
               volumenInicial={MUSICA_POR_DEFECTO.volumen_base_pct}
             />
           </div>
+
+          <div className="border-t border-editor-border pt-3">
+            <SettingsActions
+              ajustes={ajustes}
+              onRestablecer={manejarRestablecer}
+            />
+          </div>
         </aside>
       </div>
 
@@ -181,7 +222,16 @@ export default function EditorPage() {
         />
 
         {jobId && (
-          <ProgressPanel jobId={jobId} onCompletado={manejarCompletado} />
+          <ProgressPanel
+            jobId={jobId}
+            onCompletado={manejarCompletado}
+            onProgreso={setProgresoActual}
+          />
+        )}
+
+        {/* Revisión manual de subtítulos: aparece cuando el Job se pausa. */}
+        {jobId && progresoActual?.estado === 'esperando_revision' && (
+          <SubtitleReview jobId={jobId} />
         )}
 
         {jobId && completado && <ResultPreview jobId={jobId} />}

@@ -193,6 +193,7 @@ def generar_y_quemar_subtitulos(
     *,
     runner: Runner = ejecutar_comando,
     existe_salida: Optional[Callable[[Path], bool]] = None,
+    grupos: Optional[Sequence[GrupoSubtitulo]] = None,
 ) -> Path:
     """Ejecuta el Paso 4: agrupa, genera el ASS y lo quema con ffmpeg (Req 7).
 
@@ -216,6 +217,10 @@ def generar_y_quemar_subtitulos(
         runner: Ejecutor de comandos ffmpeg inyectable.
         existe_salida: Predicado inyectable que indica si el archivo de salida
             existe (por defecto, comprobación real en disco).
+        grupos: Grupos de subtítulo **ya construidos** (p. ej. editados a mano en
+            la revisión manual). Si se proporcionan, se usan tal cual y se omite
+            la agrupación automática de ``palabras``; si es ``None``, se agrupan
+            las ``palabras`` con :func:`app.engine.grouping.agrupar` (Req 6).
 
     Returns:
         La ruta del video subtitulado.
@@ -229,9 +234,11 @@ def generar_y_quemar_subtitulos(
     if invalidos:
         raise ConfiguracionSubtitulosError(invalidos)
 
-    # (2) Agrupación + construcción del ASS (Req 7.1).
-    grupos: List[GrupoSubtitulo] = agrupar(palabras, subtitulos.max_palabras)
-    ass_texto = construir_ass(grupos, subtitulos, resolucion)
+    # (2) Agrupación (o uso de grupos ya editados) + construcción del ASS (Req 7.1).
+    grupos_finales: List[GrupoSubtitulo] = (
+        list(grupos) if grupos is not None else agrupar(palabras, subtitulos.max_palabras)
+    )
+    ass_texto = construir_ass(grupos_finales, subtitulos, resolucion)
     ass_path_obj = Path(ass_path)
     ass_path_obj.parent.mkdir(parents=True, exist_ok=True)
     ass_path_obj.write_text(ass_texto, encoding="utf-8")

@@ -15,12 +15,16 @@
  */
 
 import type {
+  Ajustes,
   ApiErrorBody,
+  ConfiguracionResponse,
+  GrupoSubtitulo,
   JobProgress,
   ProcesarRequest,
   ProcesarResponse,
   SubirClipsResponse,
   SubirMusicaResponse,
+  SubtitulosRevision,
 } from './types';
 
 /** URL base del backend; configurable por variable de entorno pública. */
@@ -271,6 +275,83 @@ export async function obtenerProgreso(
     { method: 'GET', signal: opciones.signal },
   );
   return parseJsonOrThrow<JobProgress>(res);
+}
+
+// ---------------------------------------------------------------------------
+// GET/POST /subtitulos/{id} — Revisión manual de subtítulos
+// ---------------------------------------------------------------------------
+
+/** Obtiene los grupos de subtítulo propuestos para revisar/editar. */
+export async function obtenerSubtitulos(
+  jobId: string,
+  opciones: { baseUrl?: string; signal?: AbortSignal } = {},
+): Promise<SubtitulosRevision> {
+  const res = await fetchConTimeout(
+    buildUrl(`/subtitulos/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    { method: 'GET', signal: opciones.signal },
+  );
+  return parseJsonOrThrow<SubtitulosRevision>(res);
+}
+
+/**
+ * Envía el texto editado de los subtítulos y reanuda el pipeline (fase 2). Solo
+ * se edita el texto; los tiempos los conserva el backend por índice.
+ */
+export async function enviarSubtitulos(
+  jobId: string,
+  grupos: Array<Pick<GrupoSubtitulo, 'texto'>>,
+  opciones: { baseUrl?: string } = {},
+): Promise<ProcesarResponse> {
+  const res = await fetchConTimeout(
+    buildUrl(`/subtitulos/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ grupos: grupos.map((g) => ({ texto: g.texto })) }),
+    },
+  );
+  return parseJsonOrThrow<ProcesarResponse>(res);
+}
+
+// ---------------------------------------------------------------------------
+// /configuracion — Ajustes por defecto persistidos (JSON local del backend)
+// ---------------------------------------------------------------------------
+
+/** Obtiene los ajustes por defecto guardados (o `null` si no hay). */
+export async function obtenerConfiguracion(
+  opciones: { baseUrl?: string; signal?: AbortSignal } = {},
+): Promise<ConfiguracionResponse> {
+  const res = await fetchConTimeout(
+    buildUrl('/configuracion', opciones.baseUrl),
+    { method: 'GET', signal: opciones.signal },
+  );
+  return parseJsonOrThrow<ConfiguracionResponse>(res);
+}
+
+/** Guarda los ajustes actuales como predeterminados. */
+export async function guardarConfiguracion(
+  ajustes: Ajustes,
+  opciones: { baseUrl?: string } = {},
+): Promise<{ guardado: boolean; ajustes: Ajustes }> {
+  const res = await fetchConTimeout(
+    buildUrl('/configuracion', opciones.baseUrl),
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ajustes }),
+    },
+  );
+  return parseJsonOrThrow<{ guardado: boolean; ajustes: Ajustes }>(res);
+}
+
+/** Borra los ajustes por defecto guardados (restablece a fábrica). */
+export async function borrarConfiguracion(
+  opciones: { baseUrl?: string } = {},
+): Promise<{ borrado: boolean }> {
+  const res = await fetchConTimeout(buildUrl('/configuracion', opciones.baseUrl), {
+    method: 'DELETE',
+  });
+  return parseJsonOrThrow<{ borrado: boolean }>(res);
 }
 
 // ---------------------------------------------------------------------------
