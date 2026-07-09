@@ -437,7 +437,7 @@ def construir_filtro_recorte(segmentos: List[Tuple[float, float]]) -> str:
     )
     return (
         "[0:v]select='%s',setpts=N/FRAME_RATE/TB[v];"
-        "[0:a]aselect='%s',asetpts=N/SR/STB[a]" % (sel, sel)
+        "[0:a]aselect='%s',asetpts=N/SR/TB[a]" % (sel, sel)
     )
 
 
