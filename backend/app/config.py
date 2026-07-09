@@ -178,10 +178,6 @@ TRANSICION_DURACION_MS_MAX: int = 2000
 # defecto desactivada (el pipeline corre de principio a fin sin intervención).
 DEFAULT_SUBTITULOS_REVISAR: bool = False
 
-# Si está activado, todo el texto de los subtítulos se muestra en minúscula.
-# Por defecto desactivado (se conserva el texto tal cual lo transcribe el modelo).
-DEFAULT_SUBTITULOS_MINUSCULAS: bool = False
-
 # Transcripción (Req 5.2, 5.3).
 DEFAULT_IDIOMA: str = "es"
 DEFAULT_MODELO: str = "small"

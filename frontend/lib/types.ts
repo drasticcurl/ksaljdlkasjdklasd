@@ -106,8 +106,6 @@ export interface AjustesSubtitulos {
   max_palabras: number;
   /** Si es `true`, el pipeline se pausa tras transcribir para revisar el texto. */
   revisar: boolean;
-  /** Si es `true`, todo el texto de los subtítulos se muestra en minúscula. */
-  minusculas: boolean;
   posicion_vertical: PosicionVertical;
   posicion_horizontal: PosicionHorizontal;
   /** Posición vertical como % de la altura: 0..100. */

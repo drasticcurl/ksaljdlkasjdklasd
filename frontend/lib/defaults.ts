@@ -44,8 +44,6 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
     max_palabras: 4,
     // Revisión manual desactivada por defecto (el pipeline corre completo).
     revisar: false,
-    // Texto en minúscula desactivado por defecto (se conserva la transcripción).
-    minusculas: false,
     posicion_vertical: 'inferior',
     posicion_horizontal: 'centro',
     pos_vertical_pct: 85,

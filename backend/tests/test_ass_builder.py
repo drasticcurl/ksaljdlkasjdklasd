@@ -278,26 +278,6 @@ def test_tabla_alineacion_completa() -> None:
     assert calcular_alineacion("inferior", "derecha") == 3
 
 
-def test_minusculas_pasa_el_texto_a_minuscula() -> None:
-    """Con ``minusculas=True`` el texto del Dialogue va en minúscula (con acentos)."""
-    grupos = [GrupoSubtitulo(texto="HOLA Qué TAL Ñoño", inicio_s=0.0, fin_s=1.0)]
-    resolucion = ResolucionObjetivo(ancho=1080, alto=1920)
-
-    ass_min = construir_ass(grupos, AjustesSubtitulos(minusculas=True), resolucion)
-    [recuperado] = parsear_dialogues(ass_min)
-    assert recuperado.texto == "hola qué tal ñoño"
-
-
-def test_minusculas_desactivado_conserva_el_texto() -> None:
-    """Por defecto (``minusculas=False``) el texto se conserva tal cual."""
-    grupos = [GrupoSubtitulo(texto="HOLA Qué TAL", inicio_s=0.0, fin_s=1.0)]
-    resolucion = ResolucionObjetivo(ancho=1080, alto=1920)
-
-    ass = construir_ass(grupos, AjustesSubtitulos(), resolucion)
-    [recuperado] = parsear_dialogues(ass)
-    assert recuperado.texto == "HOLA Qué TAL"
-
-
 def test_construir_ass_incluye_secciones_y_playres() -> None:
     grupos = [GrupoSubtitulo(texto="hola qué tal", inicio_s=0.5, fin_s=1.2)]
     subtitulos = AjustesSubtitulos()
