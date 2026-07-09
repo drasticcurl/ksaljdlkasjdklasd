@@ -517,7 +517,7 @@ def obtener_duracion(entrada: str, runner: Runner = ejecutar_comando) -> float:
         "-show_entries",
         "format=duration",
         "-of",
-        "default=nk=1:np=1",
+        "default=noprint_wrappers=1:nokey=1",
         entrada,
     ]
     try:
