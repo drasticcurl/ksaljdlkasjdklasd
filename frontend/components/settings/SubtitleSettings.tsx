@@ -226,6 +226,16 @@ export default function SubtitleSettings({
         onChange={(max_palabras) => onChange({ ...valor, max_palabras })}
       />
 
+      <label className="flex items-center gap-2 text-sm text-gray-300">
+        <input
+          type="checkbox"
+          checked={valor.minusculas}
+          data-testid="campo-subtitulos.minusculas"
+          onChange={(e) => onChange({ ...valor, minusculas: e.target.checked })}
+        />
+        <span>Todo el texto en minúscula</span>
+      </label>
+
       <NumberField
         etiqueta="Animación de entrada"
         campo="subtitulos.anim_entrada_ms"

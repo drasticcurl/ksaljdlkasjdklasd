@@ -79,6 +79,8 @@ class AjustesSubtitulos(BaseModel):
     """
 
     max_palabras: int = Field(default=config.DEFAULT_MAX_PALABRAS)
+    # Si está activado, todo el texto de los subtítulos se muestra en minúscula.
+    minusculas: bool = Field(default=config.DEFAULT_SUBTITULOS_MINUSCULAS)
     posicion_vertical: PosicionVertical = Field(default="inferior")
     posicion_horizontal: PosicionHorizontal = Field(default="centro")
     pos_vertical_pct: float = Field(default=85.0)

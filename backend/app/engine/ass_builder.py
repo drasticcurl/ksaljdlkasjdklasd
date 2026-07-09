@@ -269,7 +269,9 @@ def construir_ass(
     for grupo in grupos:
         inicio = format_ass_time(grupo.inicio_s)
         fin = format_ass_time(grupo.fin_s)
-        texto = _escape_texto(grupo.texto)
+        # Req: opción de mostrar todo el texto en minúscula (respeta acentos).
+        texto_grupo = grupo.texto.lower() if subtitulos.minusculas else grupo.texto
+        texto = _escape_texto(texto_grupo)
         lineas.append(
             "Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s"
             % (inicio, fin, _NOMBRE_ESTILO, override, texto)

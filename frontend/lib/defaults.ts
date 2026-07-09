@@ -37,6 +37,8 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   },
   subtitulos: {
     max_palabras: 4,
+    // Texto en minúscula desactivado por defecto (se conserva la transcripción).
+    minusculas: false,
     posicion_vertical: 'inferior',
     posicion_horizontal: 'centro',
     pos_vertical_pct: 85,

@@ -88,6 +88,8 @@ export interface AjustesTranscripcion {
 export interface AjustesSubtitulos {
   /** Máximo de palabras por grupo: UI 1..20 / motor 1..10, def 4. */
   max_palabras: number;
+  /** Si es `true`, todo el texto de los subtítulos se muestra en minúscula. */
+  minusculas: boolean;
   posicion_vertical: PosicionVertical;
   posicion_horizontal: PosicionHorizontal;
   /** Posición vertical como % de la altura: 0..100. */
