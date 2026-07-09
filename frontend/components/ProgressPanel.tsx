@@ -28,6 +28,8 @@ export interface ProgressPanelProps {
   baseUrl?: string;
   /** Se invoca una vez cuando el Job alcanza el estado `completado`. */
   onCompletado?: (progreso: JobProgress) => void;
+  /** Se invoca con cada actualización de progreso (p. ej. para detectar revisión). */
+  onProgreso?: (progreso: JobProgress) => void;
   /**
    * Inyección opcional de la función de suscripción (por defecto
    * `progress.suscribirProgreso`). Útil para pruebas.
@@ -48,6 +50,7 @@ export default function ProgressPanel({
   jobId,
   baseUrl,
   onCompletado,
+  onProgreso,
   suscribir = suscribirProgreso,
 }: ProgressPanelProps) {
   const [progreso, setProgreso] = useState<JobProgress | null>(null);
@@ -59,7 +62,10 @@ export default function ProgressPanel({
 
     const cancelar = suscribir(jobId, {
       baseUrl,
-      onProgress: (p) => setProgreso(p),
+      onProgress: (p) => {
+        setProgreso(p);
+        onProgreso?.(p);
+      },
       onError: () =>
         setErrorSuscripcion(
           'Se perdió la conexión con el seguimiento de progreso.',
@@ -154,6 +160,8 @@ function estadoLegible(estado: JobProgress['estado']): string {
       return 'En cola';
     case 'en_ejecucion':
       return 'Procesando';
+    case 'esperando_revision':
+      return 'Esperando revisión';
     case 'completado':
       return 'Completado';
     case 'fallido':

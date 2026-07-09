@@ -37,9 +37,10 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from app.engine.ffprobe import inspeccionar_clip
+from app.engine.grouping import agrupar
 from app.engine.music import NOMBRE_FINAL, mezclar_musica
 from app.engine.normalize import unir_clips
 from app.engine.proc import Runner, ejecutar_comando
@@ -57,7 +58,7 @@ from app.engine.subtitles import (
 )
 from app.engine.transcribe import NOMBRE_AUDIO, transcribir
 from app.models.job import JobStatus, PipelineStep, TOTAL_PASOS
-from app.models.settings import Ajustes
+from app.models.settings import Ajustes, GrupoSubtitulo
 from app.storage.workdir import JobWorkdir, preservar_video_final
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,14 @@ class ResultadoPipeline:
     ruta_video_final: Optional[Path] = None
     paso_fallido: Optional[PipelineStep] = None
     motivo: Optional[str] = None
+    # Pausa por revisión manual de subtítulos: cuando ``pendiente_revision`` es
+    # ``True`` el pipeline se detuvo tras la transcripción (fase 1) sin quemar
+    # subtítulos ni mezclar música. ``cortado`` es el video sobre el que se
+    # quemarán los subtítulos al reanudar y ``grupos`` son los grupos propuestos
+    # para editar. En este caso ``exito`` es ``False`` (aún no hay video final).
+    pendiente_revision: bool = False
+    cortado: Optional[Path] = None
+    grupos: Optional[List[GrupoSubtitulo]] = None
 
 
 def ejecutar_pipeline(
@@ -211,10 +220,14 @@ def ejecutar_pipeline(
     inicio, fin = RANGOS_PASOS[PipelineStep.UNIR]
     _reportar(reporter, JobStatus.EN_EJECUCION, 1, PipelineStep.UNIR, inicio,
               "Uniendo y normalizando clips a 9:16")
+    # Solo se pasa ``transiciones`` a ``fn_unir`` cuando hay un efecto real
+    # (tipo != "ninguna"); así el corte duro por defecto mantiene la firma previa
+    # (compatibilidad con dobles de test que no aceptan el kwarg).
+    unir_kwargs: Dict[str, Any] = {"runner": runner, "inspector": inspector}
+    if ajustes.transiciones is not None and ajustes.transiciones.tipo != "ninguna":
+        unir_kwargs["transiciones"] = ajustes.transiciones
     try:
-        unido = fn_unir(
-            job, orden_clips, ancho, alto, fps, runner=runner, inspector=inspector
-        )
+        unido = fn_unir(job, orden_clips, ancho, alto, fps, **unir_kwargs)
     except Exception as exc:  # noqa: BLE001 - se traduce a fallo de Job (Req 10.7)
         return _fallo(reporter, 1, PipelineStep.UNIR, exc, inicio)
     _reportar(reporter, JobStatus.EN_EJECUCION, 1, PipelineStep.UNIR, fin,
@@ -275,20 +288,112 @@ def ejecutar_pipeline(
     _reportar(reporter, JobStatus.EN_EJECUCION, 3, PipelineStep.TRANSCRIBIR,
               fin, "Transcripción completa")
 
+    # -------------------- Pausa opcional: revisión manual de subtítulos -------
+    # Si el usuario pidió revisar los subtítulos, el pipeline se detiene aquí
+    # (tras la transcripción): agrupa las palabras y devuelve los grupos para que
+    # se editen. La fase 2 (quemar subtítulos + música) se ejecuta al reanudar
+    # con :func:`reanudar_pipeline`.
+    if ajustes.subtitulos.revisar:
+        grupos_revision = agrupar(palabras, ajustes.subtitulos.max_palabras)
+        logger.info(
+            "Pipeline en pausa para revisión manual de subtítulos (%d grupos)",
+            len(grupos_revision),
+        )
+        return ResultadoPipeline(
+            exito=False,
+            pendiente_revision=True,
+            cortado=Path(cortado),
+            grupos=grupos_revision,
+        )
+
+    # -------------------- Fase 2: subtítulos + música + conservación ----------
+    return reanudar_pipeline(
+        job,
+        cortado,
+        ajustes,
+        palabras=palabras,
+        grupos=None,
+        musica_wav=musica_wav,
+        reporter=reporter,
+        runner=runner,
+        fn_subtitulos=fn_subtitulos,
+        fn_musica=fn_musica,
+        fn_preservar=fn_preservar,
+        existe_salida=existe_salida,
+    )
+
+
+def reanudar_pipeline(
+    job: JobWorkdir,
+    cortado: Union[str, Path],
+    ajustes: Ajustes,
+    *,
+    palabras: Optional[List[Any]] = None,
+    grupos: Optional[List[GrupoSubtitulo]] = None,
+    musica_wav: Optional[str] = None,
+    reporter: ReporteProgreso = _reporter_noop,
+    runner: Runner = ejecutar_comando,
+    fn_subtitulos: Callable[..., Path] = generar_y_quemar_subtitulos,
+    fn_musica: Callable[..., Path] = mezclar_musica,
+    fn_preservar: Callable[[JobWorkdir, Any], Path] = preservar_video_final,
+    existe_salida: Optional[Callable[[Path], bool]] = None,
+    **_inyecciones_ignoradas: Any,
+) -> ResultadoPipeline:
+    """Ejecuta la **fase 2** del pipeline: subtítulos, música y conservación.
+
+    Es la continuación de :func:`ejecutar_pipeline` a partir del video ya
+    ``cortado`` (silencios recortados) y la transcripción. Se usa en dos casos:
+
+    * Flujo normal (sin revisión): lo invoca :func:`ejecutar_pipeline` con
+      ``grupos=None`` y las ``palabras`` transcritas (la agrupación la hace el
+      paso de subtítulos).
+    * Reanudación tras la **revisión manual**: lo invoca el Gestor de Jobs con
+      los ``grupos`` ya editados por el usuario (``palabras`` puede ir vacío).
+
+    Reporta el progreso desde el paso SUBTITULOS (70 %) hasta el 100 % y respeta
+    el modo fail-soft de subtítulos (``VSE_SUBTITLES_FAILSOFT``). Acepta y
+    **ignora** inyecciones de pasos de la fase 1 (``fn_unir``, etc.) para poder
+    reenviar el mismo conjunto de inyecciones del Gestor de Jobs.
+
+    Args:
+        job: Directorio de trabajo del Job.
+        cortado: Ruta del video (silencios recortados) a subtitular.
+        ajustes: Conjunto completo de ajustes.
+        palabras: Palabras transcritas (para agrupar si ``grupos`` es ``None``).
+        grupos: Grupos de subtítulo ya construidos/editados (opcional).
+        musica_wav: Ruta del WAV de música, o ``None`` para omitir el paso 5.
+        reporter: Callback de progreso inyectable (Req 10.5).
+        runner: Ejecutor de comandos externos inyectable.
+        fn_subtitulos/fn_musica/fn_preservar: Implementaciones inyectables.
+        existe_salida: Predicado de existencia del subtitulado inyectable.
+
+    Returns:
+        :class:`ResultadoPipeline` con el resultado de la fase 2.
+    """
+    resolucion = ajustes.generales.resolucion
+    hay_musica = musica_wav is not None and ajustes.musica is not None
+    palabras_seq: List[Any] = palabras if palabras is not None else []
+    cortado_path = Path(cortado)
+
     # -------------------- Paso 4: SUBTITULOS --------------------
     inicio, fin = RANGOS_PASOS[PipelineStep.SUBTITULOS]
     _reportar(reporter, JobStatus.EN_EJECUCION, 4, PipelineStep.SUBTITULOS,
               inicio, "Generando y quemando subtítulos")
+    # Solo se pasa ``grupos`` a ``fn_subtitulos`` cuando hay grupos ya editados,
+    # para mantener la firma previa del paso en el flujo normal (compatibilidad
+    # con dobles de test que no aceptan el kwarg ``grupos``).
+    sub_kwargs: Dict[str, Any] = {"runner": runner, "existe_salida": existe_salida}
+    if grupos is not None:
+        sub_kwargs["grupos"] = grupos
     try:
         subtitulado = fn_subtitulos(
-            cortado,
-            palabras,
+            cortado_path,
+            palabras_seq,
             ajustes.subtitulos,
             resolucion,
             job.resolve(NOMBRE_ASS),
             job.resolve(NOMBRE_SUBTITULADO),
-            runner=runner,
-            existe_salida=existe_salida,
+            **sub_kwargs,
         )
     except (SubtitulosError, ConfiguracionSubtitulosError) as exc:
         # Fail-soft OPCIONAL (VSE_SUBTITLES_FAILSOFT): si el quemado de subtítulos
@@ -300,7 +405,7 @@ def ejecutar_pipeline(
                 ENV_SUBTITLES_FAILSOFT,
                 exc,
             )
-            subtitulado = cortado
+            subtitulado = cortado_path
             _reportar(
                 reporter,
                 JobStatus.EN_EJECUCION,
@@ -414,4 +519,5 @@ __all__ = [
     "ReporteProgreso",
     "ResultadoPipeline",
     "ejecutar_pipeline",
+    "reanudar_pipeline",
 ]

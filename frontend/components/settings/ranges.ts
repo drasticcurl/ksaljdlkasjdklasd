@@ -34,6 +34,8 @@ export const RANGOS_UI = {
   // Silencios (Req 9.2).
   'silencios.umbral_db': { min: -60, max: 0 },
   'silencios.margen_ms': { min: 0, max: 5000 },
+  // Transiciones — duración del efecto entre clips (ms).
+  'transiciones.duracion_ms': { min: 100, max: 2000 },
   // Subtítulos (Req 9.1).
   'subtitulos.pos_vertical_pct': { min: 0, max: 100 },
   'subtitulos.pos_horizontal_pct': { min: 0, max: 100 },
@@ -86,6 +88,18 @@ export const SUPPORTED_WHISPER_MODELS: readonly string[] = [
 export function idiomasSeleccionables(): string[] {
   return [IDIOMA_AUTO, ...SUPPORTED_WHISPER_LANGUAGES];
 }
+
+/**
+ * Tipos de transición seleccionables en la UI, con su etiqueta legible. El
+ * valor debe coincidir con `TipoTransicion` del backend/tipos del frontend.
+ */
+export const TIPOS_TRANSICION: ReadonlyArray<{ valor: string; etiqueta: string }> = [
+  { valor: 'ninguna', etiqueta: 'Sin transición (corte)' },
+  { valor: 'disolucion', etiqueta: 'Disolución' },
+  { valor: 'fundido_negro', etiqueta: 'Fundido a negro' },
+  { valor: 'deslizar_izq', etiqueta: 'Deslizar (izquierda)' },
+  { valor: 'deslizar_arriba', etiqueta: 'Deslizar (arriba)' },
+];
 
 /** Fuentes disponibles para los subtítulos (Req 9.1). */
 export const FUENTES_DISPONIBLES: readonly string[] = [
