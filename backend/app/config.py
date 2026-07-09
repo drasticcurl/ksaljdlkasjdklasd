@@ -160,9 +160,28 @@ DEFAULT_SILENCIO_MARGEN_MS: int = 200
 # ``VSE_SILENCE_ENGINE``.
 SILENCE_ENGINE: str = os.environ.get("VSE_SILENCE_ENGINE", "ffmpeg").strip() or "ffmpeg"
 
+# Método de corte de silencios elegido en la UI:
+#   - "db": por umbral de decibelios (silencedetect / auto-editor).
+#   - "voz": por detección de voz con IA (VAD Silero, vía faster-whisper), que
+#     conserva los tramos con voz humana y corta el resto (más robusto ante ruido
+#     de fondo/música que el umbral de dB).
+DEFAULT_SILENCIO_MODO: str = "db"
+
 # Duración mínima (en segundos) de un silencio para que ffmpeg ``silencedetect``
 # lo considere; también es el valor por defecto de ``d=`` del filtro.
 DEFAULT_MIN_SILENCIO_S: float = 0.5
+
+# ---------------------------------------------------------------------------
+# Eliminación de risas (jaja/jeje/...) por transcripción.
+# ---------------------------------------------------------------------------
+# Si está activada, tras transcribir se detectan las palabras de risa y se
+# recortan esos segmentos del video (remapeando los tiempos de las demás
+# palabras). Por defecto desactivada en el modelo (la UI la ofrece activada).
+DEFAULT_RISAS_ACTIVADO: bool = False
+# Margen (ms) que se recorta a cada lado del segmento de risa.
+DEFAULT_RISAS_MARGEN_MS: int = 100
+RISAS_MARGEN_MS_MIN: int = 0
+RISAS_MARGEN_MS_MAX: int = 2000
 
 # Transiciones entre clips (Paso 1, UNIR). Por defecto SIN transición (corte
 # duro), para preservar el comportamiento previo y no forzar recodificación.
@@ -196,6 +215,15 @@ DEFAULT_COLOR_BORDE: str = "#000000"
 # Si está activado, todo el texto de los subtítulos se muestra en minúscula.
 # Por defecto desactivado (se conserva el texto tal cual lo transcribe el modelo).
 DEFAULT_SUBTITULOS_MINUSCULAS: bool = False
+
+# Preset de estilo de subtítulo:
+#   - "clasico": línea completa con slide-up + fade (comportamiento previo).
+#   - "resaltado": karaoke, resalta la palabra activa en el color de acento.
+#   - "bold_pop": como "resaltado" pensado para fuentes bold (p. ej. Poppins).
+# El modelo por defecto es "clasico" (compatibilidad); la UI ofrece "bold_pop".
+DEFAULT_SUBTITULOS_PRESET: str = "clasico"
+# Color de acento para la palabra activa en los presets de karaoke (#RRGGBB).
+DEFAULT_SUBTITULOS_COLOR_RESALTADO: str = "#FFE500"
 
 # Música / ducking (Req 8.4, 8.5, 8.6).
 DEFAULT_VOLUMEN_MUSICA_PCT: int = 30

@@ -23,6 +23,7 @@ import MusicUploader from '@/components/MusicUploader';
 import GeneralSettings from '@/components/settings/GeneralSettings';
 import SilenceSettings from '@/components/settings/SilenceSettings';
 import TransitionSettings from '@/components/settings/TransitionSettings';
+import RisasSettings from '@/components/settings/RisasSettings';
 import TranscriptionSettings from '@/components/settings/TranscriptionSettings';
 import SubtitleSettings from '@/components/settings/SubtitleSettings';
 import SettingsActions from '@/components/settings/SettingsActions';
@@ -174,6 +175,11 @@ export default function EditorPage() {
             onChange={(transiciones) =>
               setAjustes((p) => ({ ...p, transiciones }))
             }
+          />
+
+          <RisasSettings
+            valor={ajustes.risas}
+            onChange={(risas) => setAjustes((p) => ({ ...p, risas }))}
           />
 
           <TranscriptionSettings

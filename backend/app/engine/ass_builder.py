@@ -219,6 +219,134 @@ def _linea_estilo(subtitulos: AjustesSubtitulos) -> str:
     )
 
 
+def _es_karaoke(subtitulos: AjustesSubtitulos) -> bool:
+    """Indica si el preset activa el resaltado palabra por palabra (karaoke)."""
+    return getattr(subtitulos, "preset", "clasico") in ("resaltado", "bold_pop")
+
+
+def _tokens_grupo(grupo: GrupoSubtitulo, minusculas: bool) -> List[str]:
+    """Divide el texto del grupo en palabras (aplicando minúscula si procede)."""
+    texto = grupo.texto.lower() if minusculas else grupo.texto
+    return texto.split()
+
+
+def limites_palabras(grupo: GrupoSubtitulo, num_tokens: int) -> List[float]:
+    """Calcula los ``num_tokens + 1`` límites de tiempo del karaoke (lógica pura).
+
+    Usa los timestamps por palabra de ``grupo.palabras`` cuando están disponibles
+    y son coherentes (misma cantidad que ``num_tokens`` y estrictamente
+    crecientes); en caso contrario reparte el intervalo del grupo por igual entre
+    las palabras. Los límites resultantes son no decrecientes, empiezan en
+    ``grupo.inicio_s`` y terminan en ``grupo.fin_s``.
+    """
+    ini = float(grupo.inicio_s)
+    fin = float(grupo.fin_s)
+    if fin < ini:
+        fin = ini
+    if num_tokens <= 0:
+        return [ini, fin]
+
+    starts: List[float] = []
+    palabras = grupo.palabras or []
+    if len(palabras) == num_tokens:
+        ok = True
+        prev = ini - 1.0
+        for p in palabras:
+            s = getattr(p, "inicio_s", None)
+            if s is None:
+                ok = False
+                break
+            s = min(max(float(s), ini), fin)
+            if s <= prev:  # exige orden estricto para evitar solapes
+                ok = False
+                break
+            starts.append(s)
+            prev = s
+        if not ok:
+            starts = []
+
+    if not starts:
+        dur = fin - ini
+        starts = [ini + dur * k / num_tokens for k in range(num_tokens)]
+
+    bounds = list(starts) + [fin]
+    bounds[0] = ini
+    for k in range(1, len(bounds)):
+        if bounds[k] < bounds[k - 1]:
+            bounds[k] = bounds[k - 1]
+    return bounds
+
+
+def construir_lineas_karaoke(
+    grupo: GrupoSubtitulo,
+    subtitulos: AjustesSubtitulos,
+    x: int,
+    y: int,
+) -> List[str]:
+    """Construye las líneas ``Dialogue:`` de un grupo con resaltado por palabra.
+
+    Emite una línea por palabra: durante su intervalo, la palabra activa se pinta
+    en el color de acento (``color_resaltado``) y el resto en el color base. La
+    posición es estática (``\\pos``) para que el efecto sea el cambio de resaltado
+    y no un desplazamiento. Si el grupo no tiene palabras/duración útil, emite una
+    única línea con el texto completo.
+    """
+    tokens = _tokens_grupo(grupo, subtitulos.minusculas)
+    an = calcular_alineacion(
+        subtitulos.posicion_vertical, subtitulos.posicion_horizontal
+    )
+    base = color_a_ass(subtitulos.color)
+    override_base = "{\\an%d\\pos(%d,%d)\\1c%s}" % (an, x, y, base)
+
+    if not tokens:
+        return []
+    if len(tokens) == 1 or grupo.fin_s <= grupo.inicio_s:
+        # Sin karaoke útil: una sola línea con el texto completo.
+        texto = _escape_texto(" ".join(tokens))
+        return [
+            "Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s"
+            % (
+                format_ass_time(grupo.inicio_s),
+                format_ass_time(grupo.fin_s),
+                _NOMBRE_ESTILO,
+                override_base,
+                texto,
+            )
+        ]
+
+    accent = color_a_ass(subtitulos.color_resaltado)
+    bounds = limites_palabras(grupo, len(tokens))
+
+    lineas: List[str] = []
+    for k, _tok in enumerate(tokens):
+        ini_k = bounds[k]
+        fin_k = bounds[k + 1]
+        if fin_k <= ini_k:
+            # Solo la última palabra puede quedar sin margen; dale una pizca.
+            fin_k = ini_k + 0.03 if k == len(tokens) - 1 else ini_k
+            if fin_k <= ini_k:
+                continue
+        partes: List[str] = []
+        for j, t in enumerate(tokens):
+            t_esc = _escape_texto(t)
+            if j == k:
+                partes.append("{\\1c%s}%s{\\1c%s}" % (accent, t_esc, base))
+            else:
+                partes.append(t_esc)
+        texto = " ".join(partes)
+        lineas.append(
+            "Dialogue: 0,%s,%s,%s,,0,0,0,,%s%s"
+            % (
+                format_ass_time(ini_k),
+                format_ass_time(fin_k),
+                _NOMBRE_ESTILO,
+                override_base,
+                texto,
+            )
+        )
+    return lineas
+
+
 def construir_ass(
     grupos: Sequence[GrupoSubtitulo],
     subtitulos: AjustesSubtitulos,
@@ -266,7 +394,12 @@ def construir_ass(
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, "
         "Effect, Text"
     )
+    karaoke = _es_karaoke(subtitulos)
     for grupo in grupos:
+        if karaoke:
+            # Resaltado palabra por palabra (posición estática).
+            lineas.extend(construir_lineas_karaoke(grupo, subtitulos, x, y_final))
+            continue
         inicio = format_ass_time(grupo.inicio_s)
         fin = format_ass_time(grupo.fin_s)
         # Req: opción de mostrar todo el texto en minúscula (respeta acentos).
@@ -349,5 +482,7 @@ __all__ = [
     "calcular_posicion_base",
     "construir_override",
     "construir_ass",
+    "construir_lineas_karaoke",
+    "limites_palabras",
     "parsear_dialogues",
 ]

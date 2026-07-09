@@ -69,6 +69,21 @@ else
 fi
 echo ""
 
+# --- 2b) Fuente Poppins (para los subtítulos "Bold Pop") -----------------------
+# Best-effort: si falla, la app sigue funcionando (libass usará otra fuente).
+echo "[2b] Comprobando la fuente Poppins (subtítulos)..."
+if system_profiler SPFontsDataType 2>/dev/null | grep -qi "Poppins"; then
+  echo "      La fuente Poppins ya está instalada."
+else
+  echo "      Instalando la fuente Poppins con Homebrew (opcional)..."
+  brew install --cask font-poppins >/dev/null 2>&1 \
+    && echo "      Fuente Poppins instalada." \
+    || echo "      (No se pudo instalar Poppins automáticamente; podés instalarla" \
+            "manualmente desde Google Fonts. Los subtítulos funcionarán igual con" \
+            "otra fuente.)"
+fi
+echo ""
+
 # --- 3) Entorno virtual e instalación de dependencias de Python ----------------
 echo "[3/4] Configurando el entorno virtual de Python (.venv)..."
 if [ ! -d ".venv" ]; then

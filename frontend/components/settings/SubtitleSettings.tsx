@@ -20,7 +20,13 @@ import type {
   PosicionVertical,
 } from '@/lib/types';
 import NumberField from './NumberField';
-import { FUENTES_DISPONIBLES, RANGOS_UI, colorValido } from './ranges';
+import {
+  FUENTES_DISPONIBLES,
+  PRESETS_SUBTITULO,
+  RANGOS_UI,
+  colorValido,
+} from './ranges';
+import type { PresetSubtitulo } from '@/lib/types';
 
 export interface SubtitleSettingsProps {
   valor: AjustesSubtitulos;
@@ -86,6 +92,33 @@ export default function SubtitleSettings({
       <legend className="px-1 text-sm font-semibold text-gray-200">
         Subtítulos
       </legend>
+
+      <label className="flex flex-col gap-1 text-sm text-gray-300">
+        <span>Estilo</span>
+        <select
+          value={valor.preset}
+          data-testid="campo-subtitulos.preset"
+          onChange={(e) =>
+            onChange({ ...valor, preset: e.target.value as PresetSubtitulo })
+          }
+          className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-white"
+        >
+          {PRESETS_SUBTITULO.map((p) => (
+            <option key={p.valor} value={p.valor}>
+              {p.etiqueta}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {valor.preset !== 'clasico' && (
+        <CampoColor
+          etiqueta="Color de acento (palabra activa)"
+          campo="subtitulos.color_resaltado"
+          valor={valor.color_resaltado}
+          onChange={(color_resaltado) => onChange({ ...valor, color_resaltado })}
+        />
+      )}
 
       <label className="flex flex-col gap-1 text-sm text-gray-300">
         <span>Posición vertical</span>

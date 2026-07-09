@@ -146,6 +146,9 @@ def agrupar_detallado(
                 texto=" ".join(p.texto for p in trozo),  # Req 6.3
                 inicio_s=inicio_s,  # Req 6.4
                 fin_s=fin_s,  # Req 6.4
+                # Palabras con sus timestamps individuales, para el resaltado
+                # palabra por palabra (karaoke) en ass_builder.
+                palabras=list(trozo),
             )
         )
 

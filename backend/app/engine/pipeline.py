@@ -56,6 +56,7 @@ from app.engine.subtitles import (
     SubtitulosError,
     generar_y_quemar_subtitulos,
 )
+from app.engine.risas import NOMBRE_SIN_RISAS, eliminar_risas
 from app.engine.transcribe import NOMBRE_AUDIO, transcribir
 from app.models.job import JobStatus, PipelineStep, TOTAL_PASOS
 from app.models.settings import Ajustes, GrupoSubtitulo
@@ -181,6 +182,7 @@ def ejecutar_pipeline(
     fn_unir: Callable[..., Path] = unir_clips,
     fn_cortar: Callable[..., Path] = cortar_silencios,
     fn_transcribir: Callable[..., List[Any]] = transcribir,
+    fn_risas: Callable[..., Any] = eliminar_risas,
     fn_subtitulos: Callable[..., Path] = generar_y_quemar_subtitulos,
     fn_musica: Callable[..., Path] = mezclar_musica,
     fn_preservar: Callable[[JobWorkdir, Any], Path] = preservar_video_final,
@@ -237,15 +239,19 @@ def ejecutar_pipeline(
     inicio, fin = RANGOS_PASOS[PipelineStep.CORTAR_SILENCIOS]
     _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
               inicio, "Cortando silencios")
+    # Método de corte: "voz" usa el motor VAD (IA); "db" mantiene el motor por
+    # defecto. Solo se pasa ``engine`` cuando es "voz", para no romper los dobles
+    # de test que no aceptan el kwarg.
+    cortar_kwargs: Dict[str, Any] = {
+        "activado": ajustes.silencios.activado,
+        "umbral_db": ajustes.silencios.umbral_db,
+        "margen_ms": ajustes.silencios.margen_ms,
+        "runner": runner,
+    }
+    if getattr(ajustes.silencios, "modo", "db") == "voz":
+        cortar_kwargs["engine"] = "vad"
     try:
-        cortado = fn_cortar(
-            unido,
-            job.resolve(NOMBRE_CORTADO),
-            activado=ajustes.silencios.activado,
-            umbral_db=ajustes.silencios.umbral_db,
-            margen_ms=ajustes.silencios.margen_ms,
-            runner=runner,
-        )
+        cortado = fn_cortar(unido, job.resolve(NOMBRE_CORTADO), **cortar_kwargs)
     except SilenceProcessingError as exc:
         # Fail-soft OPCIONAL (VSE_SILENCE_FAILSOFT): si auto-editor falla, se
         # continúa el pipeline SIN recortar, usando el video de entrada del paso
@@ -287,6 +293,24 @@ def ejecutar_pipeline(
         return _fallo(reporter, 3, PipelineStep.TRANSCRIBIR, exc, inicio)
     _reportar(reporter, JobStatus.EN_EJECUCION, 3, PipelineStep.TRANSCRIBIR,
               fin, "Transcripción completa")
+
+    # -------------------- Quitar risas (opcional) --------------------
+    # Tras transcribir, si está activado, se recortan los segmentos de risa del
+    # video y se remapean los tiempos de las palabras a la nueva línea de tiempo.
+    # Reasigna ``cortado`` (el video a subtitular) y ``palabras``.
+    if getattr(ajustes, "risas", None) is not None and ajustes.risas.activado:
+        _reportar(reporter, JobStatus.EN_EJECUCION, 3, PipelineStep.TRANSCRIBIR,
+                  fin, "Quitando risas")
+        try:
+            cortado, palabras = fn_risas(
+                cortado,
+                job.resolve(NOMBRE_SIN_RISAS),
+                palabras,
+                margen_ms=ajustes.risas.margen_ms,
+                runner=runner,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _fallo(reporter, 3, PipelineStep.TRANSCRIBIR, exc, inicio)
 
     # -------------------- Pausa opcional: revisión manual de subtítulos -------
     # Si el usuario pidió revisar los subtítulos, el pipeline se detiene aquí
