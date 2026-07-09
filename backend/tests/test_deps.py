@@ -40,8 +40,10 @@ from app.deps.checker import (
 from app.deps import path_setup
 from app.deps.path_setup import (
     RUTAS_LOCALES_MACOS,
+    asegurar_confianza_auto_editor_macos,
     asegurar_path_local,
     asegurar_permisos_auto_editor,
+    preparar_auto_editor,
 )
 
 # Mínimo 100 iteraciones por propiedad.
@@ -371,3 +373,122 @@ def test_asegurar_permisos_auto_editor_find_spec_ausente(monkeypatch) -> None:
     )
     # No debe lanzar aunque se ejecute la localización real.
     assert asegurar_permisos_auto_editor() == 0
+
+
+# ---------------------------------------------------------------------------
+# Bugfix macOS "Killed: 9": mitigaciones de confianza (xattr/codesign)
+# Validates: evita que macOS mate el binario de auto-editor con SIGKILL.
+# ---------------------------------------------------------------------------
+def test_confianza_macos_es_noop_fuera_de_darwin(monkeypatch) -> None:
+    """Fuera de macOS, ``asegurar_confianza_auto_editor_macos`` no hace nada."""
+    monkeypatch.setattr(path_setup.sys, "platform", "linux")
+
+    llamadas: list = []
+    monkeypatch.setattr(
+        path_setup.subprocess, "run", lambda *a, **k: llamadas.append((a, k))
+    )
+    # También forzamos que localizar el paquete devolvería algo, para asegurar
+    # que el corto-circuito ocurre por la plataforma y no por ausencia de paquete.
+    monkeypatch.setattr(
+        path_setup, "_localizar_paquete_auto_editor", lambda: path_setup.Path("/x")
+    )
+
+    asegurar_confianza_auto_editor_macos()
+
+    # No se ejecutó ningún subprocess (ni xattr ni codesign).
+    assert llamadas == []
+
+
+def test_confianza_macos_ejecuta_xattr_y_codesign(tmp_path, monkeypatch) -> None:
+    """En macOS, se ejecuta ``xattr`` sobre el paquete y ``codesign`` por binario.
+
+    Se mockea ``subprocess.run`` para no ejecutar binarios reales inexistentes."""
+    monkeypatch.setattr(path_setup.sys, "platform", "darwin")
+
+    paquete = tmp_path / "auto_editor"
+    bin_dir = paquete / "bin"
+    bin_dir.mkdir(parents=True)
+    binario = bin_dir / "auto-editor"
+    binario.write_bytes(b"#!/bin/sh\necho hola\n")
+
+    monkeypatch.setattr(
+        path_setup, "_localizar_paquete_auto_editor", lambda: paquete
+    )
+    monkeypatch.setattr(path_setup, "_localizar_bin_auto_editor", lambda: bin_dir)
+
+    llamadas: list = []
+
+    def _fake_run(args, **kwargs):
+        llamadas.append(list(args))
+
+        class _R:
+            returncode = 0
+
+        return _R()
+
+    monkeypatch.setattr(path_setup.subprocess, "run", _fake_run)
+
+    asegurar_confianza_auto_editor_macos()
+
+    # Se ejecutó xattr para quitar la cuarentena del paquete.
+    assert any(a[:3] == ["xattr", "-dr", "com.apple.quarantine"] for a in llamadas)
+    # Se re-firmó ad-hoc el binario con codesign.
+    assert any(
+        a[:4] == ["codesign", "--force", "--sign", "-"] for a in llamadas
+    )
+
+
+def test_confianza_macos_tolerante_a_fallos(tmp_path, monkeypatch) -> None:
+    """Si ``subprocess.run`` lanza (p. ej. binario ausente), no propaga la excepción."""
+    monkeypatch.setattr(path_setup.sys, "platform", "darwin")
+
+    paquete = tmp_path / "auto_editor"
+    bin_dir = paquete / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "auto-editor").write_bytes(b"bin")
+
+    monkeypatch.setattr(
+        path_setup, "_localizar_paquete_auto_editor", lambda: paquete
+    )
+    monkeypatch.setattr(path_setup, "_localizar_bin_auto_editor", lambda: bin_dir)
+
+    def _boom(*_a, **_k):
+        raise FileNotFoundError("xattr/codesign no está instalado")
+
+    monkeypatch.setattr(path_setup.subprocess, "run", _boom)
+
+    # No debe lanzar pese a que cada subprocess falla.
+    asegurar_confianza_auto_editor_macos()
+
+
+def test_confianza_macos_sin_paquete_no_rompe(monkeypatch) -> None:
+    """Si el paquete auto_editor no está instalado, la función no rompe (macOS)."""
+    monkeypatch.setattr(path_setup.sys, "platform", "darwin")
+    monkeypatch.setattr(path_setup, "_localizar_paquete_auto_editor", lambda: None)
+
+    llamadas: list = []
+    monkeypatch.setattr(
+        path_setup.subprocess, "run", lambda *a, **k: llamadas.append(a)
+    )
+
+    asegurar_confianza_auto_editor_macos()
+    assert llamadas == []
+
+
+def test_preparar_auto_editor_compone_permisos_y_confianza(monkeypatch) -> None:
+    """``preparar_auto_editor`` invoca permisos + confianza de macOS."""
+    orden: list = []
+    monkeypatch.setattr(
+        path_setup,
+        "asegurar_permisos_auto_editor",
+        lambda: orden.append("permisos") or 0,
+    )
+    monkeypatch.setattr(
+        path_setup,
+        "asegurar_confianza_auto_editor_macos",
+        lambda: orden.append("confianza"),
+    )
+
+    preparar_auto_editor()
+
+    assert orden == ["permisos", "confianza"]

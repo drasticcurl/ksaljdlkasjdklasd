@@ -34,6 +34,7 @@ Referencias de requisitos: 3.x, 4.x, 5.x, 6.x, 7.x, 8.x, 10.5, 10.7.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -42,7 +43,11 @@ from app.engine.ffprobe import inspeccionar_clip
 from app.engine.music import NOMBRE_FINAL, mezclar_musica
 from app.engine.normalize import unir_clips
 from app.engine.proc import Runner, ejecutar_comando
-from app.engine.silence import NOMBRE_CORTADO, cortar_silencios
+from app.engine.silence import (
+    NOMBRE_CORTADO,
+    SilenceProcessingError,
+    cortar_silencios,
+)
 from app.engine.subtitles import (
     NOMBRE_ASS,
     NOMBRE_SUBTITULADO,
@@ -54,6 +59,23 @@ from app.models.settings import Ajustes
 from app.storage.workdir import JobWorkdir, preservar_video_final
 
 logger = logging.getLogger(__name__)
+
+# Nombre de la variable de entorno que activa el modo "fail-soft" del corte de
+# silencios: si auto-editor falla, el pipeline continúa sin recortar en lugar de
+# marcar el Job como fallido. Desactivado por defecto (Req 10.7).
+ENV_SILENCE_FAILSOFT: str = "VSE_SILENCE_FAILSOFT"
+
+
+def _silence_failsoft_activo() -> bool:
+    """Indica si el modo fail-soft del corte de silencios está activado.
+
+    Se activa con ``VSE_SILENCE_FAILSOFT`` en {"1", "true", "yes"} (sin importar
+    mayúsculas/minúsculas ni espacios). Cualquier otro valor (o su ausencia) lo
+    mantiene desactivado, preservando el comportamiento actual (Req 10.7).
+    """
+    valor = os.environ.get(ENV_SILENCE_FAILSOFT, "").strip().lower()
+    return valor in {"1", "true", "yes"}
+
 
 # ---------------------------------------------------------------------------
 # Reparto de porcentaje por paso (borde inferior, borde superior). Ver diseño,
@@ -194,10 +216,34 @@ def ejecutar_pipeline(
             margen_ms=ajustes.silencios.margen_ms,
             runner=runner,
         )
+    except SilenceProcessingError as exc:
+        # Fail-soft OPCIONAL (VSE_SILENCE_FAILSOFT): si auto-editor falla, se
+        # continúa el pipeline SIN recortar, usando el video de entrada del paso
+        # (el unido) como si fuera el cortado. Solo aplica a este paso.
+        if _silence_failsoft_activo():
+            logger.warning(
+                "Cortar silencios falló; se continúa sin recortar "
+                "(%s): %s",
+                ENV_SILENCE_FAILSOFT,
+                exc,
+            )
+            cortado = unido
+            _reportar(
+                reporter,
+                JobStatus.EN_EJECUCION,
+                2,
+                PipelineStep.CORTAR_SILENCIOS,
+                fin,
+                "Corte de silencios omitido tras fallo (fail-soft)",
+            )
+        else:
+            # Comportamiento por defecto (Req 10.7): el Job pasa a fallido.
+            return _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
     except Exception as exc:  # noqa: BLE001
         return _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
-    _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
-              fin, "Silencios recortados")
+    else:
+        _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
+                  fin, "Silencios recortados")
 
     # -------------------- Paso 3: TRANSCRIBIR --------------------
     inicio, fin = RANGOS_PASOS[PipelineStep.TRANSCRIBIR]
@@ -322,6 +368,7 @@ def _fallo(
 __all__ = [
     "RANGOS_PASOS",
     "ORDEN_PASOS",
+    "ENV_SILENCE_FAILSOFT",
     "EventoProgreso",
     "ReporteProgreso",
     "ResultadoPipeline",
