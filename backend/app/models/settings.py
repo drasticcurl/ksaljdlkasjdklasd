@@ -105,6 +105,8 @@ class AjustesSubtitulos(BaseModel):
     # Si está activado, el pipeline se pausa tras la transcripción para que el
     # usuario revise/edite el texto de los subtítulos antes de quemarlos.
     revisar: bool = Field(default=config.DEFAULT_SUBTITULOS_REVISAR)
+    # Si está activado, todo el texto de los subtítulos se muestra en minúscula.
+    minusculas: bool = Field(default=config.DEFAULT_SUBTITULOS_MINUSCULAS)
     posicion_vertical: PosicionVertical = Field(default="inferior")
     posicion_horizontal: PosicionHorizontal = Field(default="centro")
     pos_vertical_pct: float = Field(default=85.0)
