@@ -157,6 +157,12 @@ def test_construir_filtro_contiene_elementos_clave() -> None:
     assert "[a]" in filtro
     # Los dos segmentos se unen con '+' (OR lógico) dentro de select.
     assert "+" in filtro
+    # El video reajusta PTS con setpts=N/FRAME_RATE/TB.
+    assert "setpts=N/FRAME_RATE/TB" in filtro
+    # Regresión: el audio debe usar asetpts=N/SR/TB. 'STB' NO es una constante
+    # válida de ffmpeg (provocaba "Undefined constant or missing '(' in 'STB'").
+    assert "asetpts=N/SR/TB" in filtro
+    assert "STB" not in filtro
 
 
 # ---------------------------------------------------------------------------
