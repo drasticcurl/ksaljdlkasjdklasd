@@ -27,7 +27,8 @@ import SubtitleSettings from '@/components/settings/SubtitleSettings';
 import ProcessButton from '@/components/ProcessButton';
 import ProgressPanel from '@/components/ProgressPanel';
 import ResultPreview from '@/components/ResultPreview';
-import type { Clip, JobProgress } from '@/lib/types';
+import SubtitleReview from '@/components/SubtitleReview';
+import type { Clip, JobProgress, JobStatus } from '@/lib/types';
 import { AJUSTES_POR_DEFECTO, MUSICA_POR_DEFECTO } from '@/lib/defaults';
 
 export default function EditorPage() {
@@ -36,6 +37,7 @@ export default function EditorPage() {
   const [musicaId, setMusicaId] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [completado, setCompletado] = useState(false);
+  const [estadoJob, setEstadoJob] = useState<JobStatus | null>(null);
 
   /** Reindexa la lista de clips para que `posicion` sea 1..n. */
   const reindexar = useCallback(
@@ -82,11 +84,17 @@ export default function EditorPage() {
   const manejarJobIniciado = useCallback((nuevoJobId: string) => {
     setJobId(nuevoJobId);
     setCompletado(false);
+    setEstadoJob(null);
   }, []);
 
   /** Marca el Job como completado para mostrar la previsualización (Req 11.1). */
   const manejarCompletado = useCallback((_p: JobProgress) => {
     setCompletado(true);
+  }, []);
+
+  /** Sigue el estado del Job para mostrar la revisión de subtítulos si aplica. */
+  const manejarProgreso = useCallback((p: JobProgress) => {
+    setEstadoJob(p.estado);
   }, []);
 
   const ordenClips = clips.map((clip) => clip.id);
@@ -181,7 +189,17 @@ export default function EditorPage() {
         />
 
         {jobId && (
-          <ProgressPanel jobId={jobId} onCompletado={manejarCompletado} />
+          <ProgressPanel
+            jobId={jobId}
+            onCompletado={manejarCompletado}
+            onProgreso={manejarProgreso}
+          />
+        )}
+
+        {/* Revisión de subtítulos: el pipeline se pausa hasta que el usuario
+            confirma las líneas editadas (estado esperando_revision). */}
+        {jobId && estadoJob === 'esperando_revision' && (
+          <SubtitleReview jobId={jobId} />
         )}
 
         {jobId && completado && <ResultPreview jobId={jobId} />}

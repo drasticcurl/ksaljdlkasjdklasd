@@ -61,6 +61,16 @@ export default function SilenceSettings({
         rango={RANGOS_UI['silencios.margen_ms']}
         onChange={(margen_ms) => onChange({ ...valor, margen_ms })}
       />
+
+      <NumberField
+        etiqueta="Duración mínima de silencio"
+        campo="silencios.min_silencio_ms"
+        unidad="ms"
+        paso={50}
+        valor={valor.min_silencio_ms}
+        rango={RANGOS_UI['silencios.min_silencio_ms']}
+        onChange={(min_silencio_ms) => onChange({ ...valor, min_silencio_ms })}
+      />
     </fieldset>
   );
 }

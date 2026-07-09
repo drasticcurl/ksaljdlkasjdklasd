@@ -550,6 +550,7 @@ def cortar_silencios_ffmpeg(
     salida: Union[str, Path],
     umbral_db: float,
     margen_ms: float,
+    min_silencio_s: Optional[float] = None,
     runner: Runner = ejecutar_comando,
 ) -> Path:
     """Corta los silencios usando el motor nativo de ffmpeg (Req 4.1, 4.5).
@@ -567,6 +568,9 @@ def cortar_silencios_ffmpeg(
         salida: Ruta del video recortado a producir.
         umbral_db: Umbral de ruido en dB (UI, negativo).
         margen_ms: Margen en milisegundos.
+        min_silencio_s: Duración mínima de silencio (segundos) para ``d=`` del
+            filtro ``silencedetect``. Si es ``None`` se usa el fallback
+            ``config.DEFAULT_MIN_SILENCIO_S``.
         runner: Ejecutor de comandos inyectable.
 
     Returns:
@@ -578,6 +582,11 @@ def cortar_silencios_ffmpeg(
     entrada_path = Path(entrada)
     salida_path = Path(salida)
     margen_s = float(margen_ms) / 1000.0
+    dur_min_silencio = (
+        float(min_silencio_s)
+        if min_silencio_s is not None
+        else config.DEFAULT_MIN_SILENCIO_S
+    )
 
     logger.info("ffmpeg resuelto en: %s", shutil.which("ffmpeg") or "(no encontrado)")
     logger.info("ffprobe resuelto en: %s", shutil.which("ffprobe") or "(no encontrado)")
@@ -585,7 +594,7 @@ def cortar_silencios_ffmpeg(
 
     # (1) Detección de silencios.
     cmd_detect = comando_silencedetect(
-        str(entrada_path), umbral_db, config.DEFAULT_MIN_SILENCIO_S
+        str(entrada_path), umbral_db, dur_min_silencio
     )
     logger.info("Ejecutando silencedetect: %s", " ".join(cmd_detect))
     try:
@@ -657,6 +666,7 @@ def cortar_silencios(
     activado: bool,
     umbral_db: Optional[float] = None,
     margen_ms: Optional[int] = None,
+    min_silencio_ms: Optional[int] = None,
     validador: Optional[ValidadorSilencio] = None,
     runner: Runner = ejecutar_comando,
     engine: Optional[str] = None,
@@ -677,6 +687,9 @@ def cortar_silencios(
         activado: Si el corte de silencios está activado.
         umbral_db: Umbral en dB (UI). Por defecto, el del ``validador``.
         margen_ms: Margen en ms (UI). Por defecto, el del ``validador``.
+        min_silencio_ms: Duración mínima de silencio (ms) que se traslada al
+            motor ffmpeg. Si es ``None`` se usa el fallback
+            ``config.DEFAULT_MIN_SILENCIO_S`` (solo aplica al motor ffmpeg).
         validador: :class:`ValidadorSilencio` con el último valor válido; si es
             ``None`` se crea uno con los valores por defecto.
         runner: Ejecutor de comandos inyectable.
@@ -719,12 +732,17 @@ def cortar_silencios(
     motor = engine if engine is not None else config.SILENCE_ENGINE
     if motor != "auto-editor":
         # Motor ffmpeg: umbral en dB directo, margen en ms (se convierte a s
-        # dentro de la función).
+        # dentro de la función). La duración mínima de silencio se convierte de
+        # ms a s; si no se provee, la función usa el fallback de config.
+        min_silencio_s = (
+            float(min_silencio_ms) / 1000.0 if min_silencio_ms is not None else None
+        )
         return cortar_silencios_ffmpeg(
             entrada_path,
             salida,
             umbral_efectivo,
             margen_efectivo,
+            min_silencio_s=min_silencio_s,
             runner=runner,
         )
 

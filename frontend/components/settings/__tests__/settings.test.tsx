@@ -41,7 +41,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 function silenciosBase(): AjustesSilencios {
-  return { activado: true, umbral_db: -30, margen_ms: 200 };
+  return { activado: true, umbral_db: -30, margen_ms: 200, min_silencio_ms: 300 };
 }
 
 describe('SilenceSettings — rangos (Req 9.2)', () => {

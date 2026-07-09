@@ -33,7 +33,7 @@ def _fake_unir(job: JobWorkdir, orden_clips, ancho, alto, fps, *, runner, inspec
     return job.resolve("unido.mp4")
 
 
-def _fake_cortar(unido, salida, *, activado, umbral_db, margen_ms, runner) -> Path:
+def _fake_cortar(unido, salida, *, activado, umbral_db, margen_ms, runner, **kw) -> Path:
     return Path(unido)
 
 

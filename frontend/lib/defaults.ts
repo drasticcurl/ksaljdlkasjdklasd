@@ -30,6 +30,7 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
     activado: true,
     umbral_db: -30,
     margen_ms: 200,
+    min_silencio_ms: 300,
   },
   transcripcion: {
     idioma: 'es',
@@ -51,6 +52,7 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
     anim_entrada_ms: 300,
     anim_salida_ms: 300,
     slide_px: 50,
+    revisar_antes_de_renderizar: true,
   },
   // La música es opcional: null hasta que se sube un WAV válido (Req 8.1).
   musica: null,

@@ -101,6 +101,11 @@ const CAMPOS_NUMERICOS: ReadonlyArray<{
     leer: (a) => a.silencios.margen_ms,
   },
   {
+    campo: 'silencios.min_silencio_ms',
+    etiqueta: 'Duración mínima de silencio',
+    leer: (a) => a.silencios.min_silencio_ms,
+  },
+  {
     campo: 'subtitulos.pos_vertical_pct',
     etiqueta: 'Posición vertical del subtítulo',
     leer: (a) => a.subtitulos.pos_vertical_pct,

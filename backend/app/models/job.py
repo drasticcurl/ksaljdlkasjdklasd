@@ -22,6 +22,9 @@ class JobStatus(str, Enum):
 
     EN_COLA = "en_cola"
     EN_EJECUCION = "en_ejecucion"
+    # El pipeline se pausó tras agrupar las palabras y espera la revisión/edición
+    # de los subtítulos por parte del usuario antes de renderizar (Fase B).
+    ESPERANDO_REVISION = "esperando_revision"
     COMPLETADO = "completado"
     FALLIDO = "fallido"
 
@@ -77,6 +80,13 @@ class JobState(BaseModel):
     ajustes: Ajustes
     workdir: str = Field(..., description="Directorio de trabajo del Job (Req 13.3)")
     ruta_video_final: Optional[str] = Field(default=None)
+    # Grupos de subtítulo serializados ({texto, inicio_s, fin_s}) calculados en
+    # la Fase A; se exponen al usuario para su revisión/edición y se usan (ya
+    # editados) al reanudar en la Fase B.
+    grupos: Optional[list] = Field(default=None)
+    # Ruta del video tras cortar silencios (Fase A). Se conserva mientras el Job
+    # está en ESPERANDO_REVISION para poder reanudar el render (Fase B).
+    ruta_cortado: Optional[str] = Field(default=None)
     progreso: Progress = Field(default_factory=Progress)
     creado_en: datetime = Field(default_factory=_ahora)
     actualizado_en: datetime = Field(default_factory=_ahora)

@@ -254,6 +254,18 @@ export default function SubtitleSettings({
         rango={RANGOS_UI['subtitulos.slide_px']}
         onChange={(slide_px) => onChange({ ...valor, slide_px })}
       />
+
+      <label className="flex items-center gap-2 text-sm text-gray-300">
+        <input
+          type="checkbox"
+          checked={valor.revisar_antes_de_renderizar}
+          data-testid="campo-subtitulos.revisar_antes_de_renderizar"
+          onChange={(e) =>
+            onChange({ ...valor, revisar_antes_de_renderizar: e.target.checked })
+          }
+        />
+        <span>Revisar subtítulos antes de renderizar</span>
+      </label>
     </fieldset>
   );
 }

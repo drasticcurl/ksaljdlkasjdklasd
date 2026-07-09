@@ -34,6 +34,7 @@ export const RANGOS_UI = {
   // Silencios (Req 9.2).
   'silencios.umbral_db': { min: -60, max: 0 },
   'silencios.margen_ms': { min: 0, max: 5000 },
+  'silencios.min_silencio_ms': { min: 0, max: 5000 },
   // Subtítulos (Req 9.1).
   'subtitulos.pos_vertical_pct': { min: 0, max: 100 },
   'subtitulos.pos_horizontal_pct': { min: 0, max: 100 },

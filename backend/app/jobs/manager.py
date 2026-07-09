@@ -130,6 +130,47 @@ class JobManager:
             job.actualizado_en = _ahora()
             return job
 
+    def marcar_esperando_revision(
+        self,
+        job_id: str,
+        *,
+        grupos: List[Dict[str, Any]],
+        ruta_cortado: str,
+        porcentaje: int = 70,
+    ) -> JobState:
+        """Transición a ``ESPERANDO_REVISION`` guardando ``grupos`` y ``ruta_cortado``.
+
+        El Job queda pausado tras la Fase A a la espera de que el usuario revise
+        y edite las líneas de subtítulo. El porcentaje se mantiene monótono no
+        decreciente (por defecto ~70 %, borde superior de TRANSCRIBIR) y el
+        índice de paso no retrocede (Req 10.5, Propiedad 22).
+        """
+        with self._lock:
+            job = self._exigir(job_id)
+            job.grupos = list(grupos)
+            job.ruta_cortado = ruta_cortado
+            job.progreso.estado = JobStatus.ESPERANDO_REVISION
+            job.progreso.paso_actual = PipelineStep.TRANSCRIBIR
+            pct_acotado = max(0, min(100, int(porcentaje)))
+            job.progreso.porcentaje = max(job.progreso.porcentaje, pct_acotado)
+            job.progreso.mensaje = "Esperando revisión de subtítulos"
+            job.actualizado_en = _ahora()
+            return job
+
+    def actualizar_grupos(
+        self, job_id: str, grupos: List[Dict[str, Any]]
+    ) -> JobState:
+        """Reemplaza los ``grupos`` del Job con los editados por el usuario.
+
+        Se usa al reanudar (Fase B) para renderizar con el texto editado. No
+        altera el estado ni el progreso (esa transición la hace el runner).
+        """
+        with self._lock:
+            job = self._exigir(job_id)
+            job.grupos = list(grupos)
+            job.actualizado_en = _ahora()
+            return job
+
     # ------------------------------------------------------------------
     # Progreso (fuente de verdad, monótono no decreciente)
     # ------------------------------------------------------------------

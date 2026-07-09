@@ -16,7 +16,9 @@
 
 import type {
   ApiErrorBody,
+  GrupoSubtitulo,
   JobProgress,
+  ObtenerSubtitulosResponse,
   ProcesarRequest,
   ProcesarResponse,
   SubirClipsResponse,
@@ -271,6 +273,57 @@ export async function obtenerProgreso(
     { method: 'GET', signal: opciones.signal },
   );
   return parseJsonOrThrow<JobProgress>(res);
+}
+
+// ---------------------------------------------------------------------------
+// GET /subtitulos/{id} — Líneas de subtítulo a revisar (estado esperando_revision)
+// ---------------------------------------------------------------------------
+
+/**
+ * Obtiene las líneas de subtítulo de un Job en revisión para que el usuario las
+ * revise/edite antes de renderizar. El backend responde 409 si el Job no está
+ * en `esperando_revision`.
+ */
+export async function obtenerSubtitulos(
+  jobId: string,
+  opciones: { baseUrl?: string; signal?: AbortSignal } = {},
+): Promise<ObtenerSubtitulosResponse> {
+  const res = await fetchConTimeout(
+    buildUrl(`/subtitulos/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    { method: 'GET', signal: opciones.signal },
+  );
+  return parseJsonOrThrow<ObtenerSubtitulosResponse>(res);
+}
+
+// ---------------------------------------------------------------------------
+// POST /subtitulos/{id} — Confirmar subtítulos editados y reanudar el render
+// ---------------------------------------------------------------------------
+
+/**
+ * Envía los subtítulos editados y reanuda el render (Fase B) en el backend.
+ * Responde 202 con `{ job_id, estado }`.
+ */
+export async function confirmarSubtitulos(
+  jobId: string,
+  grupos: GrupoSubtitulo[],
+  opciones: { baseUrl?: string; timeoutMs?: number } = {},
+): Promise<ProcesarResponse> {
+  const res = await fetchConTimeout(
+    buildUrl(`/subtitulos/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grupos: grupos.map((g) => ({
+          texto: g.texto,
+          inicio_s: g.inicio_s,
+          fin_s: g.fin_s,
+        })),
+      }),
+    },
+    opciones.timeoutMs,
+  );
+  return parseJsonOrThrow<ProcesarResponse>(res);
 }
 
 // ---------------------------------------------------------------------------

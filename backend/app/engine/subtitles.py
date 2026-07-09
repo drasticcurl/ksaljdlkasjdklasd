@@ -224,13 +224,57 @@ def generar_y_quemar_subtitulos(
         ConfiguracionSubtitulosError: Configuración fuera de rango (Req 7.11).
         SubtitulosError: ffmpeg falló o no produjo salida (Req 7.10).
     """
+    # (1-3) Agrupación + construcción del ASS + quemado (Req 7.1, 7.2, 7.10, 7.11).
+    # Se delega en :func:`quemar_subtitulos_de_grupos`, agrupando primero las
+    # palabras (Req 6). La validación de configuración (Req 7.11) ocurre dentro.
+    grupos: List[GrupoSubtitulo] = agrupar(palabras, subtitulos.max_palabras)
+    return quemar_subtitulos_de_grupos(
+        entrada,
+        grupos,
+        subtitulos,
+        resolucion,
+        ass_path,
+        salida,
+        runner=runner,
+        existe_salida=existe_salida,
+    )
+
+
+def quemar_subtitulos_de_grupos(
+    entrada: Union[str, Path],
+    grupos: Sequence[GrupoSubtitulo],
+    subtitulos: AjustesSubtitulos,
+    resolucion: ResolucionObjetivo,
+    ass_path: Union[str, Path],
+    salida: Union[str, Path],
+    *,
+    runner: Runner = ejecutar_comando,
+    existe_salida: Optional[Callable[[Path], bool]] = None,
+) -> Path:
+    """Construye el ASS a partir de ``grupos`` **ya agrupados** y lo quema (Req 7).
+
+    A diferencia de :func:`generar_y_quemar_subtitulos`, no vuelve a agrupar
+    palabras: recibe los :class:`~app.models.settings.GrupoSubtitulo` finales
+    (por ejemplo, editados por el usuario durante la revisión) y los usa tal cual
+    para construir el ASS. Esto permite la Fase B del flujo con revisión.
+
+    Flujo:
+
+    1. **Rechaza** la configuración de subtítulos fuera de rango (Req 7.11).
+    2. Construye el texto ASS desde ``grupos`` y lo escribe en ``ass_path``.
+    3. Quema el ASS con ffmpeg (Req 7.2); si ffmpeg falla o no produce salida,
+       lanza :class:`SubtitulosError` conservando el original (Req 7.10).
+
+    Raises:
+        ConfiguracionSubtitulosError: Configuración fuera de rango (Req 7.11).
+        SubtitulosError: ffmpeg falló o no produjo salida (Req 7.10).
+    """
     # (1) Req 7.11: rechazo temprano de configuración inválida.
     invalidos = validar_config_subtitulos(subtitulos)
     if invalidos:
         raise ConfiguracionSubtitulosError(invalidos)
 
-    # (2) Agrupación + construcción del ASS (Req 7.1).
-    grupos: List[GrupoSubtitulo] = agrupar(palabras, subtitulos.max_palabras)
+    # (2) Construcción del ASS desde los grupos provistos (Req 7.1).
     ass_texto = construir_ass(grupos, subtitulos, resolucion)
     ass_path_obj = Path(ass_path)
     ass_path_obj.parent.mkdir(parents=True, exist_ok=True)
@@ -286,5 +330,6 @@ __all__ = [
     "validar_config_subtitulos",
     "comando_quemar_subtitulos",
     "generar_y_quemar_subtitulos",
+    "quemar_subtitulos_de_grupos",
     "_escapar_ruta_ass",
 ]

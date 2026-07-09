@@ -138,8 +138,14 @@ DEFAULT_SILENCIO_MARGEN_MS: int = 200
 SILENCE_ENGINE: str = os.environ.get("VSE_SILENCE_ENGINE", "ffmpeg").strip() or "ffmpeg"
 
 # Duración mínima (en segundos) de un silencio para que ffmpeg ``silencedetect``
-# lo considere; también es el valor por defecto de ``d=`` del filtro.
+# lo considere; también es el valor por defecto de ``d=`` del filtro. Actúa como
+# **fallback** cuando la interfaz no provee ``min_silencio_ms``.
 DEFAULT_MIN_SILENCIO_S: float = 0.5
+
+# Duración mínima de silencio por defecto expuesta en la interfaz (en ms). Un
+# valor más corto (300 ms) recorta más pausas que el fallback histórico de
+# 500 ms, lo que hace el corte de silencios más agresivo por defecto.
+DEFAULT_MIN_SILENCIO_MS: int = 300
 
 # Transcripción (Req 5.2, 5.3).
 DEFAULT_IDIOMA: str = "es"

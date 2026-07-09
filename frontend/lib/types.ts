@@ -74,6 +74,8 @@ export interface AjustesSilencios {
   umbral_db: number;
   /** Margen en milisegundos (UI): 0..5000. */
   margen_ms: number;
+  /** Duración mínima de un silencio para recortarlo (UI ms): 0..5000, def 300. */
+  min_silencio_ms: number;
 }
 
 /** Ajustes de transcripción (Req 5, 9.3). */
@@ -112,6 +114,11 @@ export interface AjustesSubtitulos {
   anim_salida_ms: number;
   /** Píxeles de deslizamiento (slide-up): motor 1..500, def 50. */
   slide_px: number;
+  /**
+   * Si es `true`, el pipeline se pausa tras agrupar las palabras para que el
+   * usuario revise/edite las líneas de subtítulo antes de renderizar. Def `true`.
+   */
+  revisar_antes_de_renderizar: boolean;
 }
 
 /** Ajustes de música de fondo y ducking (Req 8). */
@@ -169,8 +176,30 @@ export interface ProcesarResponse {
 export type JobStatus =
   | 'en_cola'
   | 'en_ejecucion'
+  | 'esperando_revision'
   | 'completado'
   | 'fallido';
+
+/**
+ * Una línea de subtítulo mostrada al usuario para su revisión/edición durante
+ * el estado `esperando_revision`. El usuario edita principalmente `texto`; los
+ * tiempos se conservan.
+ */
+export interface GrupoSubtitulo {
+  /** Índice de la línea (0..n-1), asignado por el backend. */
+  indice?: number;
+  /** Texto de la línea de subtítulo (editable). */
+  texto: string;
+  /** Tiempo de inicio en segundos. */
+  inicio_s: number;
+  /** Tiempo de fin en segundos. */
+  fin_s: number;
+}
+
+/** Respuesta de `GET /subtitulos/{id}`. */
+export interface ObtenerSubtitulosResponse {
+  grupos: GrupoSubtitulo[];
+}
 
 /** Pasos del pipeline, en orden estricto. */
 export type PipelineStep =

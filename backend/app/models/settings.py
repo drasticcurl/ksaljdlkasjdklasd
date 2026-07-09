@@ -59,6 +59,10 @@ class AjustesSilencios(BaseModel):
     activado: bool = Field(default=config.DEFAULT_SILENCIO_ACTIVADO)
     umbral_db: float = Field(default=config.DEFAULT_SILENCIO_UMBRAL_DB)
     margen_ms: int = Field(default=config.DEFAULT_SILENCIO_MARGEN_MS)
+    # Duración mínima de un silencio para que se recorte (UI: ms). Configurable
+    # desde la interfaz; su rango del motor es 0..5000 ms. Antes estaba fijado
+    # por ``config.DEFAULT_MIN_SILENCIO_S`` (0,5 s) de forma no configurable.
+    min_silencio_ms: int = Field(default=config.DEFAULT_MIN_SILENCIO_MS)
 
 
 class AjustesTranscripcion(BaseModel):
@@ -93,6 +97,11 @@ class AjustesSubtitulos(BaseModel):
     anim_entrada_ms: int = Field(default=config.DEFAULT_ANIM_ENTRADA_MS)
     anim_salida_ms: int = Field(default=config.DEFAULT_ANIM_SALIDA_MS)
     slide_px: int = Field(default=config.DEFAULT_SLIDE_PX)
+    # Si es ``True``, el pipeline se PAUSA tras agrupar las palabras y espera a
+    # que el usuario revise/edite las líneas de subtítulo antes de renderizar
+    # (estado ``ESPERANDO_REVISION``). Si es ``False``, el pipeline renderiza sin
+    # pausa (comportamiento histórico).
+    revisar_antes_de_renderizar: bool = Field(default=True)
 
 
 class AjustesMusica(BaseModel):
@@ -232,6 +241,8 @@ RANGOS_MOTOR: Dict[str, Tuple[float, float]] = {
     #   umbral -60..0 dB, margen 0..5000 ms (Req 9.2, 4.4).
     "silencios.umbral_db": (-60.0, 0.0),
     "silencios.margen_ms": (0, 5000),
+    # Duración mínima de silencio 0..5000 ms (Req 4.x, 9.2).
+    "silencios.min_silencio_ms": (0, 5000),
     # Subtítulos — rangos del motor (Req 7.x); más estrictos que la UI (Req 9.1).
     "subtitulos.pos_vertical_pct": (0.0, 100.0),   # 0..100 % de la altura (Req 9.1)
     "subtitulos.pos_horizontal_pct": (0.0, 100.0),  # 0..100 % del ancho (Req 9.1)

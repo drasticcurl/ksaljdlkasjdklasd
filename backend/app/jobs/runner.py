@@ -27,13 +27,56 @@ from app.engine.pipeline import (
     EventoProgreso,
     ReporteProgreso,
     ResultadoPipeline,
-    ejecutar_pipeline,
+    finalizar_render,
+    procesar_hasta_agrupar,
 )
 from app.engine.proc import Runner, ejecutar_comando
 from app.jobs.manager import JobManager
+from app.models.job import JobStatus
+from app.models.settings import GrupoSubtitulo
 from app.storage.workdir import JobWorkdir
 
 logger = logging.getLogger(__name__)
+
+
+def grupos_a_dicts(grupos) -> list:
+    """Serializa grupos de subtítulo a dicts ``{texto, inicio_s, fin_s}``.
+
+    Acepta tanto :class:`~app.models.settings.GrupoSubtitulo` como dicts ya
+    serializados (idempotente).
+    """
+    salida = []
+    for g in grupos:
+        if isinstance(g, GrupoSubtitulo):
+            salida.append(
+                {"texto": g.texto, "inicio_s": g.inicio_s, "fin_s": g.fin_s}
+            )
+        else:
+            salida.append(
+                {
+                    "texto": g["texto"],
+                    "inicio_s": g["inicio_s"],
+                    "fin_s": g["fin_s"],
+                }
+            )
+    return salida
+
+
+def dicts_a_grupos(grupos) -> list:
+    """Convierte dicts ``{texto, inicio_s, fin_s}`` en :class:`GrupoSubtitulo`."""
+    salida = []
+    for g in grupos:
+        if isinstance(g, GrupoSubtitulo):
+            salida.append(g)
+        else:
+            salida.append(
+                GrupoSubtitulo(
+                    texto=g["texto"],
+                    inicio_s=float(g["inicio_s"]),
+                    fin_s=float(g["fin_s"]),
+                )
+            )
+    return salida
 
 # Resolutor opcional de la ruta del WAV de música a partir del ``musica_id``.
 # Por defecto no resuelve música (se implementará junto al endpoint POST /musica).
@@ -106,14 +149,23 @@ class JobRunner:
         return reportar
 
     def ejecutar_job(self, job_id: str) -> ResultadoPipeline:
-        """Ejecuta el pipeline de un Job de forma **síncrona** (para el executor).
+        """Ejecuta el Job de forma **síncrona** (para el executor).
 
-        Marca el Job en ejecución, ejecuta los cinco pasos, registra el resultado
-        en el Gestor y —pase lo que pase— limpia el directorio de trabajo
-        (Req 13.4, 13.5).
+        Corre la **Fase A** (UNIR → CORTAR_SILENCIOS → TRANSCRIBIR → agrupar). A
+        continuación:
+
+        * Si ``ajustes.subtitulos.revisar_antes_de_renderizar`` es ``True``: marca
+          el Job en ``ESPERANDO_REVISION`` guardando ``grupos`` y ``ruta_cortado``
+          y **no limpia el workdir** (debe persistir para la Fase B al reanudar).
+        * Si es ``False``: corre la **Fase B**, marca ``COMPLETADO`` (o
+          ``FALLIDO``) y limpia el workdir (comportamiento histórico).
+
+        Si la Fase A falla, marca ``FALLIDO`` y limpia.
 
         Returns:
-            El :class:`ResultadoPipeline` del Job.
+            El :class:`ResultadoPipeline` del Job (para el flujo sin revisión) o
+            un resultado con ``exito=True`` cuando el Job queda a la espera de
+            revisión.
 
         Raises:
             KeyError: Si el Job no existe en el Gestor.
@@ -125,21 +177,103 @@ class JobRunner:
         self.manager.marcar_en_ejecucion(job_id)
         job_wd = JobWorkdir(job_id)
         reporter = self._crear_reporter(job_id)
-        musica_wav = self.resolver_musica(job_state.musica_id)
 
         # El ``Orden_de_Clips`` almacenado contiene identificadores de clip; el
         # pipeline (paso UNIR → ``ffprobe``) necesita RUTAS de archivo reales, así
-        # que se resuelve cada id a su ruta antes de ejecutar (BUG: se pasaban ids
-        # y ``ffprobe`` fallaba con "No such file or directory"). Con el resolutor
+        # que se resuelve cada id a su ruta antes de ejecutar. Con el resolutor
         # por defecto (identidad) el comportamiento no cambia para los tests.
         orden_rutas = [self.resolver_clip(cid) for cid in job_state.orden_clips]
 
-        resultado: ResultadoPipeline
         try:
-            resultado = ejecutar_pipeline(
+            resultado_a = procesar_hasta_agrupar(
                 job_wd,
                 orden_rutas,
                 job_state.ajustes,
+                reporter=reporter,
+                runner=self.runner,
+                **self._inyecciones,
+            )
+        except Exception as exc:  # noqa: BLE001 - fallo inesperado => Job fallido
+            logger.exception("Fallo inesperado en la Fase A del Job %s", job_id)
+            self.manager.marcar_fallido(job_id, "PIPELINE", str(exc))
+            self._limpiar(job_wd, job_id)
+            return ResultadoPipeline(exito=False, motivo=str(exc))
+
+        if not resultado_a.exito:
+            # La Fase A ya reportó el evento FALLIDO; se refuerza el estado.
+            self.manager.marcar_fallido(
+                job_id,
+                resultado_a.paso_fallido,
+                resultado_a.motivo or "fallo del pipeline",
+            )
+            self._limpiar(job_wd, job_id)
+            return ResultadoPipeline(
+                exito=False,
+                paso_fallido=resultado_a.paso_fallido,
+                motivo=resultado_a.motivo,
+            )
+
+        # Flujo CON revisión: pausar y esperar edición del usuario (NO limpiar).
+        if job_state.ajustes.subtitulos.revisar_antes_de_renderizar:
+            self.manager.marcar_esperando_revision(
+                job_id,
+                grupos=grupos_a_dicts(resultado_a.grupos),
+                ruta_cortado=str(resultado_a.ruta_cortado),
+            )
+            logger.info(
+                "Job %s en ESPERANDO_REVISION: %d grupos a revisar",
+                job_id,
+                len(resultado_a.grupos),
+            )
+            return ResultadoPipeline(exito=True)
+
+        # Flujo SIN revisión: renderizar directamente (Fase B) y limpiar.
+        return self._finalizar(
+            job_id, job_wd, job_state, resultado_a.grupos, resultado_a.ruta_cortado
+        )
+
+    def reanudar_job(self, job_id: str, grupos_editados) -> ResultadoPipeline:
+        """Reanuda un Job en ``ESPERANDO_REVISION`` corriendo la Fase B.
+
+        Valida que el Job esté en revisión, guarda los ``grupos`` editados y
+        ejecuta la Fase B (quemar subtítulos → música → preservar), marcando
+        ``COMPLETADO`` o ``FALLIDO`` y limpiando el workdir al terminar.
+
+        Raises:
+            KeyError: Si el Job no existe.
+            ValueError: Si el Job no está en ``ESPERANDO_REVISION``.
+        """
+        job_state = self.manager.obtener(job_id)
+        if job_state is None:
+            raise KeyError(f"Job inexistente: {job_id!r}")
+        if job_state.progreso.estado != JobStatus.ESPERANDO_REVISION:
+            raise ValueError(
+                f"El Job {job_id!r} no está en revisión (estado="
+                f"{job_state.progreso.estado.value})"
+            )
+
+        # Guardar los grupos editados y reanudar.
+        self.manager.actualizar_grupos(job_id, grupos_a_dicts(grupos_editados))
+        self.manager.marcar_en_ejecucion(job_id)
+
+        job_wd = JobWorkdir(job_id)
+        grupos = dicts_a_grupos(grupos_editados)
+        ruta_cortado = job_state.ruta_cortado or ""
+        return self._finalizar(job_id, job_wd, job_state, grupos, ruta_cortado)
+
+    def _finalizar(
+        self, job_id, job_wd, job_state, grupos, ruta_cortado
+    ) -> ResultadoPipeline:
+        """Ejecuta la Fase B, actualiza el estado y limpia el workdir."""
+        reporter = self._crear_reporter(job_id)
+        musica_wav = self.resolver_musica(job_state.musica_id)
+        resultado: ResultadoPipeline
+        try:
+            resultado = finalizar_render(
+                job_wd,
+                job_state.ajustes,
+                grupos,
+                str(ruta_cortado),
                 musica_wav=musica_wav,
                 reporter=reporter,
                 runner=self.runner,
@@ -155,26 +289,25 @@ class JobRunner:
                     ),
                 )
             else:
-                # El pipeline ya reportó el evento FALLIDO; se refuerza el estado.
                 self.manager.marcar_fallido(
                     job_id,
                     resultado.paso_fallido,
                     resultado.motivo or "fallo del pipeline",
                 )
         except Exception as exc:  # noqa: BLE001 - fallo inesperado => Job fallido
-            logger.exception("Fallo inesperado ejecutando el Job %s", job_id)
+            logger.exception("Fallo inesperado en la Fase B del Job %s", job_id)
             self.manager.marcar_fallido(job_id, "PIPELINE", str(exc))
             resultado = ResultadoPipeline(exito=False, motivo=str(exc))
         finally:
-            # Limpieza de temporales en toda terminación (Req 13.4, 13.5).
-            try:
-                job_wd.cleanup()
-            except Exception:  # noqa: BLE001 - la limpieza no debe propagar
-                logger.exception(
-                    "Fallo al limpiar el workdir del Job %s", job_id
-                )
-
+            self._limpiar(job_wd, job_id)
         return resultado
+
+    def _limpiar(self, job_wd: JobWorkdir, job_id: str) -> None:
+        """Limpia el workdir del Job tolerando errores (Req 13.4, 13.5)."""
+        try:
+            job_wd.cleanup()
+        except Exception:  # noqa: BLE001 - la limpieza no debe propagar
+            logger.exception("Fallo al limpiar el workdir del Job %s", job_id)
 
     async def lanzar(self, job_id: str) -> asyncio.Future:
         """Lanza la ejecución del Job en background sin bloquear (Req 10.1).
@@ -182,12 +315,26 @@ class JobRunner:
         Programa :meth:`ejecutar_job` en el executor por defecto del bucle de
         eventos y devuelve inmediatamente el :class:`asyncio.Future` asociado, de
         modo que ``POST /procesar`` pueda responder el ``job_id`` en <= 2 s.
-
-        Returns:
-            El ``Future`` de la ejecución en background (no se espera aquí).
         """
         loop = asyncio.get_event_loop()
         return loop.run_in_executor(None, self.ejecutar_job, job_id)
 
+    async def reanudar(self, job_id: str, grupos_editados) -> asyncio.Future:
+        """Lanza la Fase B (reanudación) en background sin bloquear.
 
-__all__ = ["JobRunner", "ResolverMusica", "ResolverClip"]
+        Programa :meth:`reanudar_job` en el executor para que ``POST
+        /subtitulos/{id}`` pueda responder ``202`` rápidamente.
+        """
+        loop = asyncio.get_event_loop()
+        return loop.run_in_executor(
+            None, self.reanudar_job, job_id, grupos_editados
+        )
+
+
+__all__ = [
+    "JobRunner",
+    "ResolverMusica",
+    "ResolverClip",
+    "grupos_a_dicts",
+    "dicts_a_grupos",
+]

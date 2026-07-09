@@ -151,8 +151,16 @@ class _ReporterAlGestor:
 
 
 def _ajustes_con_musica() -> Ajustes:
-    """Ajustes por defecto (todos válidos) incluyendo la sección de música."""
-    return Ajustes(musica=AjustesMusica())
+    """Ajustes por defecto (todos válidos) incluyendo la sección de música.
+
+    Se desactiva ``revisar_antes_de_renderizar`` para ejercitar el flujo SIN
+    revisión (render directo hasta COMPLETADO), que es el que asumen los tests
+    del runner y del pipeline completo. El flujo CON revisión (pausa/reanuda) se
+    cubre en tests dedicados de ``test_review.py``.
+    """
+    ajustes = Ajustes(musica=AjustesMusica())
+    ajustes.subtitulos.revisar_antes_de_renderizar = False
+    return ajustes
 
 
 _ORDEN_CLIPS = st.lists(

@@ -35,11 +35,12 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.engine.ffprobe import inspeccionar_clip
+from app.engine.grouping import agrupar
 from app.engine.music import NOMBRE_FINAL, mezclar_musica
 from app.engine.normalize import unir_clips
 from app.engine.proc import Runner, ejecutar_comando
@@ -54,10 +55,11 @@ from app.engine.subtitles import (
     ConfiguracionSubtitulosError,
     SubtitulosError,
     generar_y_quemar_subtitulos,
+    quemar_subtitulos_de_grupos,
 )
 from app.engine.transcribe import NOMBRE_AUDIO, transcribir
 from app.models.job import JobStatus, PipelineStep, TOTAL_PASOS
-from app.models.settings import Ajustes
+from app.models.settings import Ajustes, GrupoSubtitulo
 from app.storage.workdir import JobWorkdir, preservar_video_final
 
 logger = logging.getLogger(__name__)
@@ -158,6 +160,237 @@ class ResultadoPipeline:
     motivo: Optional[str] = None
 
 
+@dataclass
+class ResultadoFaseA:
+    """Resultado de la Fase A del pipeline (hasta agrupar palabras).
+
+    Attributes:
+        exito: ``True`` si UNIR → CORTAR_SILENCIOS → TRANSCRIBIR → agrupar
+            completaron.
+        grupos: Grupos de subtítulo derivados de la transcripción (Req 6).
+        ruta_cortado: Ruta del video tras cortar silencios, necesaria para
+            reanudar la Fase B (quemar subtítulos) sin reprocesar.
+        paso_fallido: Paso que falló, si ``exito`` es ``False`` (Req 10.7).
+        motivo: Motivo del fallo, si ``exito`` es ``False`` (Req 10.7).
+    """
+
+    exito: bool
+    grupos: List[GrupoSubtitulo] = field(default_factory=list)
+    ruta_cortado: Optional[Path] = None
+    paso_fallido: Optional[PipelineStep] = None
+    motivo: Optional[str] = None
+
+
+def procesar_hasta_agrupar(
+    job: JobWorkdir,
+    orden_clips: Sequence[str],
+    ajustes: Ajustes,
+    *,
+    reporter: ReporteProgreso = _reporter_noop,
+    runner: Runner = ejecutar_comando,
+    inspector: Callable[[str], Any] = inspeccionar_clip,
+    fn_unir: Callable[..., Path] = unir_clips,
+    fn_cortar: Callable[..., Path] = cortar_silencios,
+    fn_transcribir: Callable[..., List[Any]] = transcribir,
+    fn_agrupar: Callable[..., List[GrupoSubtitulo]] = agrupar,
+    **_inyecciones_extra: Any,
+) -> ResultadoFaseA:
+    """Fase A: UNIR → CORTAR_SILENCIOS → TRANSCRIBIR → agrupar (Req 3-6, 10.5).
+
+    Reporta el progreso hasta ~70 % (borde superior de TRANSCRIBIR) y devuelve
+    los grupos de subtítulo y la ruta del video cortado. Ante el fallo de
+    cualquier paso reporta un evento ``FALLIDO`` y devuelve un
+    :class:`ResultadoFaseA` sin éxito (Req 10.7). El corte de silencios respeta
+    el modo fail-soft opcional (``VSE_SILENCE_FAILSOFT``).
+
+    Los ``**_inyecciones_extra`` se aceptan y se ignoran para que el runner pueda
+    reenviar el conjunto completo de pasos inyectables (``fn_subtitulos``,
+    ``fn_musica``, ``fn_preservar``) sin error.
+    """
+    job.create()
+
+    resolucion = ajustes.generales.resolucion
+    ancho = resolucion.ancho
+    alto = resolucion.alto
+    fps = ajustes.generales.fps
+
+    # -------------------- Paso 1: UNIR --------------------
+    inicio, fin = RANGOS_PASOS[PipelineStep.UNIR]
+    _reportar(reporter, JobStatus.EN_EJECUCION, 1, PipelineStep.UNIR, inicio,
+              "Uniendo y normalizando clips a 9:16")
+    try:
+        unido = fn_unir(
+            job, orden_clips, ancho, alto, fps, runner=runner, inspector=inspector
+        )
+    except Exception as exc:  # noqa: BLE001
+        _fallo(reporter, 1, PipelineStep.UNIR, exc, inicio)
+        return ResultadoFaseA(exito=False, paso_fallido=PipelineStep.UNIR, motivo=str(exc))
+    _reportar(reporter, JobStatus.EN_EJECUCION, 1, PipelineStep.UNIR, fin,
+              "Clips unidos")
+
+    # -------------------- Paso 2: CORTAR_SILENCIOS --------------------
+    inicio, fin = RANGOS_PASOS[PipelineStep.CORTAR_SILENCIOS]
+    _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
+              inicio, "Cortando silencios")
+    try:
+        cortado = fn_cortar(
+            unido,
+            job.resolve(NOMBRE_CORTADO),
+            activado=ajustes.silencios.activado,
+            umbral_db=ajustes.silencios.umbral_db,
+            margen_ms=ajustes.silencios.margen_ms,
+            min_silencio_ms=ajustes.silencios.min_silencio_ms,
+            runner=runner,
+        )
+    except SilenceProcessingError as exc:
+        if _silence_failsoft_activo():
+            logger.warning(
+                "Cortar silencios falló; se continúa sin recortar (%s): %s",
+                ENV_SILENCE_FAILSOFT,
+                exc,
+            )
+            cortado = unido
+            _reportar(reporter, JobStatus.EN_EJECUCION, 2,
+                      PipelineStep.CORTAR_SILENCIOS, fin,
+                      "Corte de silencios omitido tras fallo (fail-soft)")
+        else:
+            _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
+            return ResultadoFaseA(
+                exito=False, paso_fallido=PipelineStep.CORTAR_SILENCIOS, motivo=str(exc)
+            )
+    except Exception as exc:  # noqa: BLE001
+        _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
+        return ResultadoFaseA(
+            exito=False, paso_fallido=PipelineStep.CORTAR_SILENCIOS, motivo=str(exc)
+        )
+    else:
+        _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
+                  fin, "Silencios recortados")
+
+    # -------------------- Paso 3: TRANSCRIBIR --------------------
+    inicio, fin = RANGOS_PASOS[PipelineStep.TRANSCRIBIR]
+    _reportar(reporter, JobStatus.EN_EJECUCION, 3, PipelineStep.TRANSCRIBIR,
+              inicio, "Transcribiendo audio")
+    try:
+        palabras = fn_transcribir(
+            cortado, ajustes.transcripcion, job.resolve(NOMBRE_AUDIO), runner=runner
+        )
+    except Exception as exc:  # noqa: BLE001
+        _fallo(reporter, 3, PipelineStep.TRANSCRIBIR, exc, inicio)
+        return ResultadoFaseA(
+            exito=False, paso_fallido=PipelineStep.TRANSCRIBIR, motivo=str(exc)
+        )
+
+    # Agrupación de palabras (Req 6): lógica pura, sin herramientas externas.
+    grupos = fn_agrupar(palabras, ajustes.subtitulos.max_palabras)
+
+    _reportar(reporter, JobStatus.EN_EJECUCION, 3, PipelineStep.TRANSCRIBIR,
+              fin, "Transcripción completa")
+
+    return ResultadoFaseA(exito=True, grupos=list(grupos), ruta_cortado=Path(cortado))
+
+
+def finalizar_render(
+    job: JobWorkdir,
+    ajustes: Ajustes,
+    grupos: Sequence[GrupoSubtitulo],
+    ruta_cortado: str,
+    *,
+    musica_wav: Optional[str] = None,
+    reporter: ReporteProgreso = _reporter_noop,
+    runner: Runner = ejecutar_comando,
+    existe_salida: Optional[Callable[[Path], bool]] = None,
+    fn_subtitulos: Callable[..., Path] = quemar_subtitulos_de_grupos,
+    fn_musica: Callable[..., Path] = mezclar_musica,
+    fn_preservar: Callable[[JobWorkdir, Any], Path] = preservar_video_final,
+    **_inyecciones_extra: Any,
+) -> ResultadoPipeline:
+    """Fase B: quemar subtítulos (desde ``grupos``) → música → preservar (Req 7, 8).
+
+    Reporta el progreso de 70 % a 100 % y termina en estado ``COMPLETADO`` en
+    caso de éxito. Ante fallo reporta ``FALLIDO`` y devuelve un
+    :class:`ResultadoPipeline` sin éxito (Req 10.7). El quemado de subtítulos
+    respeta el modo fail-soft opcional (``VSE_SUBTITLES_FAILSOFT``).
+
+    Los ``**_inyecciones_extra`` se aceptan y se ignoran para que el runner pueda
+    reenviar el conjunto completo de pasos inyectables sin error.
+    """
+    resolucion = ajustes.generales.resolucion
+    hay_musica = musica_wav is not None and ajustes.musica is not None
+    cortado = Path(ruta_cortado)
+
+    # -------------------- Paso 4: SUBTITULOS --------------------
+    inicio, fin = RANGOS_PASOS[PipelineStep.SUBTITULOS]
+    _reportar(reporter, JobStatus.EN_EJECUCION, 4, PipelineStep.SUBTITULOS,
+              inicio, "Generando y quemando subtítulos")
+    try:
+        subtitulado = fn_subtitulos(
+            cortado,
+            list(grupos),
+            ajustes.subtitulos,
+            resolucion,
+            job.resolve(NOMBRE_ASS),
+            job.resolve(NOMBRE_SUBTITULADO),
+            runner=runner,
+            existe_salida=existe_salida,
+        )
+    except (SubtitulosError, ConfiguracionSubtitulosError) as exc:
+        if _subtitles_failsoft_activo():
+            logger.warning(
+                "Subtítulos fallaron; se continúa sin subtítulos (%s): %s",
+                ENV_SUBTITLES_FAILSOFT,
+                exc,
+            )
+            subtitulado = cortado
+            _reportar(reporter, JobStatus.EN_EJECUCION, 4, PipelineStep.SUBTITULOS,
+                      fin, "Subtítulos omitidos tras fallo (fail-soft)")
+        else:
+            return _fallo(reporter, 4, PipelineStep.SUBTITULOS, exc, inicio)
+    except Exception as exc:  # noqa: BLE001
+        return _fallo(reporter, 4, PipelineStep.SUBTITULOS, exc, inicio)
+    else:
+        _reportar(reporter, JobStatus.EN_EJECUCION, 4, PipelineStep.SUBTITULOS,
+                  fin, "Subtítulos quemados")
+
+    # -------------------- Paso 5: MUSICA (opcional) --------------------
+    video_final_tmp = subtitulado
+    if hay_musica:
+        inicio, fin = RANGOS_PASOS[PipelineStep.MUSICA]
+        _reportar(reporter, JobStatus.EN_EJECUCION, 5, PipelineStep.MUSICA,
+                  inicio, "Mezclando música de fondo")
+        try:
+            video_final_tmp = fn_musica(
+                subtitulado,
+                musica_wav,
+                ajustes.musica,
+                job.resolve(NOMBRE_FINAL),
+                runner=runner,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return _fallo(reporter, 5, PipelineStep.MUSICA, exc, inicio)
+    else:
+        logger.info("Paso MUSICA omitido: no se proporcionó un WAV válido (Req 8.3)")
+
+    # -------------------- Conservación del Video_Final --------------------
+    try:
+        ruta_final = fn_preservar(job, video_final_tmp)
+    except Exception as exc:  # noqa: BLE001
+        paso_final = PipelineStep.MUSICA if hay_musica else PipelineStep.SUBTITULOS
+        indice_final = 5 if hay_musica else 4
+        return _fallo(reporter, indice_final, paso_final, exc,
+                      RANGOS_PASOS[paso_final][1])
+
+    _reportar(
+        reporter,
+        JobStatus.COMPLETADO,
+        TOTAL_PASOS,
+        PipelineStep.MUSICA if hay_musica else PipelineStep.SUBTITULOS,
+        100,
+        "Procesamiento completado",
+    )
+    return ResultadoPipeline(exito=True, ruta_video_final=ruta_final)
+
+
 def ejecutar_pipeline(
     job: JobWorkdir,
     orden_clips: Sequence[str],
@@ -231,6 +464,7 @@ def ejecutar_pipeline(
             activado=ajustes.silencios.activado,
             umbral_db=ajustes.silencios.umbral_db,
             margen_ms=ajustes.silencios.margen_ms,
+            min_silencio_ms=ajustes.silencios.min_silencio_ms,
             runner=runner,
         )
     except SilenceProcessingError as exc:
@@ -413,5 +647,8 @@ __all__ = [
     "EventoProgreso",
     "ReporteProgreso",
     "ResultadoPipeline",
+    "ResultadoFaseA",
     "ejecutar_pipeline",
+    "procesar_hasta_agrupar",
+    "finalizar_render",
 ]
