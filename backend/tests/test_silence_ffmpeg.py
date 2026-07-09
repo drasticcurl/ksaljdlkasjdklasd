@@ -30,6 +30,7 @@ from app.engine.silence import (
     construir_filtro_recorte,
     cortar_silencios,
     cortar_silencios_ffmpeg,
+    obtener_duracion,
     parsear_silencedetect,
 )
 
@@ -177,6 +178,67 @@ def test_comando_recorte_mapea_v_y_a() -> None:
     assert "-filter_complex" in comando
     assert "[v]" in comando and "[a]" in comando
     assert comando[-1] == "out.mp4"
+
+
+# ---------------------------------------------------------------------------
+# obtener_duracion (ffprobe) — comando canónico y parseo
+# ---------------------------------------------------------------------------
+class _RunnerCaptura:
+    """Runner que captura el comando y devuelve un resultado fijo."""
+
+    def __init__(self, stdout: str = "", returncode: int = 0, stderr: str = "") -> None:
+        self.stdout = stdout
+        self.returncode = returncode
+        self.stderr = stderr
+        self.comandos: List[List[str]] = []
+
+    def __call__(self, args: Sequence[str]) -> ResultadoComando:
+        args = list(args)
+        self.comandos.append(args)
+        return ResultadoComando(
+            returncode=self.returncode,
+            stdout=self.stdout,
+            stderr=self.stderr,
+            args=args,
+        )
+
+
+def test_obtener_duracion_comando_usa_noprint_wrappers() -> None:
+    """El comando ffprobe de duración usa la forma canónica (ffprobe 8.x).
+
+    Regresión: ffprobe 8.x rechaza la opción inexistente ``np``; debe usarse
+    ``default=noprint_wrappers=1:nokey=1``.
+    """
+    runner = _RunnerCaptura(stdout="38.08\n", returncode=0)
+    obtener_duracion("in.mp4", runner=runner)
+    comando = runner.comandos[0]
+    assert comando[0] == "ffprobe"
+    assert "-of" in comando
+    idx = comando.index("-of")
+    assert comando[idx + 1] == "default=noprint_wrappers=1:nokey=1"
+    # No debe quedar rastro de la opción inválida 'np' ni del alias corto 'nk'.
+    assert "np=1" not in comando[idx + 1]
+    assert "nk=1" not in comando[idx + 1]
+
+
+def test_obtener_duracion_parsea_stdout_numerico() -> None:
+    """Con rc 0 y stdout numérico devuelve el float correspondiente."""
+    runner = _RunnerCaptura(stdout="38.08\n", returncode=0)
+    assert obtener_duracion("in.mp4", runner=runner) == pytest.approx(38.08)
+
+
+def test_obtener_duracion_rc_distinto_de_cero_lanza_error() -> None:
+    """Con rc != 0 se lanza SilenceProcessingError."""
+    runner = _RunnerCaptura(stdout="", returncode=1, stderr="boom")
+    with pytest.raises(SilenceProcessingError):
+        obtener_duracion("in.mp4", runner=runner)
+
+
+def test_obtener_duracion_stdout_vacio_lanza_error() -> None:
+    """Con rc 0 pero stdout vacío/no numérico se lanza SilenceProcessingError."""
+    runner = _RunnerCaptura(stdout="   ", returncode=0)
+    with pytest.raises(SilenceProcessingError):
+        obtener_duracion("in.mp4", runner=runner)
 
 
 # ---------------------------------------------------------------------------
