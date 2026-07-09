@@ -51,6 +51,8 @@ from app.engine.silence import (
 from app.engine.subtitles import (
     NOMBRE_ASS,
     NOMBRE_SUBTITULADO,
+    ConfiguracionSubtitulosError,
+    SubtitulosError,
     generar_y_quemar_subtitulos,
 )
 from app.engine.transcribe import NOMBRE_AUDIO, transcribir
@@ -65,16 +67,31 @@ logger = logging.getLogger(__name__)
 # marcar el Job como fallido. Desactivado por defecto (Req 10.7).
 ENV_SILENCE_FAILSOFT: str = "VSE_SILENCE_FAILSOFT"
 
+# Nombre de la variable de entorno que activa el modo "fail-soft" del quemado de
+# subtítulos: si el paso falla, el pipeline continúa SIN subtítulos usando el
+# video de entrada del paso. Desactivado por defecto (Req 10.7).
+ENV_SUBTITLES_FAILSOFT: str = "VSE_SUBTITLES_FAILSOFT"
+
+
+def _env_flag_activo(nombre: str) -> bool:
+    """Indica si una variable de entorno de tipo flag está activada.
+
+    Se considera activa con valor en {"1", "true", "yes"} (sin importar
+    mayúsculas/minúsculas ni espacios). Cualquier otro valor (o su ausencia) la
+    mantiene desactivada.
+    """
+    valor = os.environ.get(nombre, "").strip().lower()
+    return valor in {"1", "true", "yes"}
+
 
 def _silence_failsoft_activo() -> bool:
-    """Indica si el modo fail-soft del corte de silencios está activado.
+    """Indica si el modo fail-soft del corte de silencios está activado (Req 10.7)."""
+    return _env_flag_activo(ENV_SILENCE_FAILSOFT)
 
-    Se activa con ``VSE_SILENCE_FAILSOFT`` en {"1", "true", "yes"} (sin importar
-    mayúsculas/minúsculas ni espacios). Cualquier otro valor (o su ausencia) lo
-    mantiene desactivado, preservando el comportamiento actual (Req 10.7).
-    """
-    valor = os.environ.get(ENV_SILENCE_FAILSOFT, "").strip().lower()
-    return valor in {"1", "true", "yes"}
+
+def _subtitles_failsoft_activo() -> bool:
+    """Indica si el modo fail-soft del quemado de subtítulos está activado (Req 10.7)."""
+    return _env_flag_activo(ENV_SUBTITLES_FAILSOFT)
 
 
 # ---------------------------------------------------------------------------
@@ -273,10 +290,33 @@ def ejecutar_pipeline(
             runner=runner,
             existe_salida=existe_salida,
         )
+    except (SubtitulosError, ConfiguracionSubtitulosError) as exc:
+        # Fail-soft OPCIONAL (VSE_SUBTITLES_FAILSOFT): si el quemado de subtítulos
+        # falla, se continúa el pipeline SIN subtítulos, usando el video de
+        # entrada del paso (el cortado) como salida. Solo aplica a este paso.
+        if _subtitles_failsoft_activo():
+            logger.warning(
+                "Subtítulos fallaron; se continúa sin subtítulos (%s): %s",
+                ENV_SUBTITLES_FAILSOFT,
+                exc,
+            )
+            subtitulado = cortado
+            _reportar(
+                reporter,
+                JobStatus.EN_EJECUCION,
+                4,
+                PipelineStep.SUBTITULOS,
+                fin,
+                "Subtítulos omitidos tras fallo (fail-soft)",
+            )
+        else:
+            # Comportamiento por defecto (Req 10.7): el Job pasa a fallido.
+            return _fallo(reporter, 4, PipelineStep.SUBTITULOS, exc, inicio)
     except Exception as exc:  # noqa: BLE001
         return _fallo(reporter, 4, PipelineStep.SUBTITULOS, exc, inicio)
-    _reportar(reporter, JobStatus.EN_EJECUCION, 4, PipelineStep.SUBTITULOS,
-              fin, "Subtítulos quemados")
+    else:
+        _reportar(reporter, JobStatus.EN_EJECUCION, 4, PipelineStep.SUBTITULOS,
+                  fin, "Subtítulos quemados")
 
     # -------------------- Paso 5: MUSICA (opcional) --------------------
     video_final_tmp = subtitulado
@@ -369,6 +409,7 @@ __all__ = [
     "RANGOS_PASOS",
     "ORDEN_PASOS",
     "ENV_SILENCE_FAILSOFT",
+    "ENV_SUBTITLES_FAILSOFT",
     "EventoProgreso",
     "ReporteProgreso",
     "ResultadoPipeline",
