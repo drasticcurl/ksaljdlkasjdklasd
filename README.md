@@ -224,6 +224,27 @@ http://localhost:8000/salud
 
 Debe responder `{"estado": "ok"}`. Si no responde, el backend no está arrancado.
 
+### Render de subtítulos y corte de silencios (macOS / ffmpeg 8.x)
+
+- **Subtítulos con `ass=filename=`:** el quemado de subtítulos invoca `ffmpeg`
+  con el filtro en la forma de opción nombrada `ass=filename=<ruta>` (con la
+  ruta escapada para el filtergraph). Esto es necesario porque `ffmpeg` 8.x
+  rechaza la ruta como argumento posicional (`No option name near '...ass'`). Si
+  tu `ffmpeg` **no incluye libass** (o el filtro de subtítulos no está
+  disponible), el paso falla con un mensaje accionable: reinstala un `ffmpeg`
+  con libass, por ejemplo `brew reinstall ffmpeg`.
+
+- **Corte de silencios con `ffmpeg` por defecto:** el paso de silencios usa el
+  motor nativo de `ffmpeg` (`silencedetect` + recorte con `select`/`aselect`),
+  que **no depende de `auto-editor`** (cuyo binario macOS puede terminar con
+  `Killed: 9`/SIGKILL). Controla el motor con la variable de entorno
+  `VSE_SILENCE_ENGINE`: `ffmpeg` (por defecto) o `auto-editor`.
+
+- **Continuar sin subtítulos si el quemado falla:** con `VSE_SUBTITLES_FAILSOFT=1`
+  el pipeline continúa sin subtítulos (usa el video de entrada del paso) en lugar
+  de marcar el Job como fallido cuando el quemado de subtítulos falla. Está
+  desactivado por defecto.
+
 ## Notas
 
 - No se establece ninguna conexión de red saliente hacia servicios externos ni

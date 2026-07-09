@@ -65,6 +65,7 @@ def test_integracion_corte_silencios_construye_comando(tmp_path: Path) -> None:
         umbral_db=0.0,   # 0 dB -> 100 % del motor
         margen_ms=2000,  # 2000 ms -> 2 s
         runner=runner,
+        engine="auto-editor",
     )
 
     assert resultado == salida
@@ -197,7 +198,12 @@ def test_integracion_quemado_subtitulos_construye_comando(tmp_path: Path) -> Non
     comando = runner.comandos[0]
     assert comando[0] == "ffmpeg"
     assert "-vf" in comando
-    assert any(arg == "ass=%s" % ass_path for arg in comando)
+    # ffmpeg 8.x requiere la opción nombrada `filename=` (no la ruta posicional).
+    from app.engine.subtitles import _escapar_ruta_ass
+
+    assert any(
+        arg == "ass=filename=%s" % _escapar_ruta_ass(str(ass_path)) for arg in comando
+    )
 
 
 def test_integracion_quemado_subtitulos_rechaza_config_invalida(tmp_path: Path) -> None:

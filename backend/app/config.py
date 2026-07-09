@@ -130,6 +130,17 @@ DEFAULT_SILENCIO_ACTIVADO: bool = True
 DEFAULT_SILENCIO_UMBRAL_DB: float = -30.0  # equivalente UI (~4 % del motor)
 DEFAULT_SILENCIO_MARGEN_MS: int = 200
 
+# Motor de corte de silencios. Por defecto se usa el motor nativo de ffmpeg
+# (``silencedetect`` + recorte con ``select``/``aselect``), que no depende de
+# ``auto-editor`` (cuyo binario macOS mata con SIGKILL). Alternativa:
+# ``"auto-editor"``. Configurable con la variable de entorno
+# ``VSE_SILENCE_ENGINE``.
+SILENCE_ENGINE: str = os.environ.get("VSE_SILENCE_ENGINE", "ffmpeg").strip() or "ffmpeg"
+
+# Duración mínima (en segundos) de un silencio para que ffmpeg ``silencedetect``
+# lo considere; también es el valor por defecto de ``d=`` del filtro.
+DEFAULT_MIN_SILENCIO_S: float = 0.5
+
 # Transcripción (Req 5.2, 5.3).
 DEFAULT_IDIOMA: str = "es"
 DEFAULT_MODELO: str = "small"

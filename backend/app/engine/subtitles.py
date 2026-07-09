@@ -24,6 +24,7 @@ Referencias de requisitos: 7.1, 7.2, 7.10, 7.11.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Union
 
@@ -45,6 +46,65 @@ NOMBRE_SUBTITULADO: str = "subtitulado.mp4"
 
 # Prefijo de las rutas de campo de subtítulos dentro de RANGOS_MOTOR.
 _PREFIJO_SUBTITULOS: str = "subtitulos."
+
+logger = logging.getLogger(__name__)
+
+# Límite de caracteres del stderr de ffmpeg que se incluye en el motivo del
+# error, para no desbordar el mensaje del Job ni los logs.
+_MAX_DETALLE_STDERR: int = 1500
+
+# Marcadores en el stderr de ffmpeg que indican que el filtro de subtítulos no
+# está disponible (ffmpeg compilado sin libass, o filtro ausente). Ver Req 7.10.
+_MARCADORES_LIBASS_AUSENTE: tuple[str, ...] = (
+    "no such filter",
+    "unknown filter",
+    "not compiled in",
+    "cannot load libass",
+    "could not load libass",
+)
+
+# Guía accionable cuando ffmpeg no incluye libass / el filtro de subtítulos.
+_GUIA_LIBASS_AUSENTE: str = (
+    "tu ffmpeg no incluye libass o el filtro de subtítulos no está disponible; "
+    "instala un ffmpeg con libass, p. ej. `brew reinstall ffmpeg`"
+)
+
+
+def _recortar_stderr(texto: str, limite: int = _MAX_DETALLE_STDERR) -> str:
+    """Devuelve el final del ``texto`` recortado a ``limite`` caracteres."""
+    texto = (texto or "").strip()
+    if len(texto) <= limite:
+        return texto
+    return "...(recortado)... " + texto[-limite:]
+
+
+def _escapar_ruta_ass(ruta: str) -> str:
+    """Escapa una ruta para usarla como valor en el filtergraph de ffmpeg.
+
+    El parser de filtros de ffmpeg trata ``\\``, ``:`` y ``'`` como caracteres
+    especiales dentro del valor de una opción. Se escapan en este orden (primero
+    la barra invertida para no duplicar los escapes posteriores):
+
+    * ``\\`` -> ``\\\\``
+    * ``:``  -> ``\\:``
+    * ``'``  -> ``\\'``
+
+    Args:
+        ruta: Ruta del archivo ``.ass``.
+
+    Returns:
+        La ruta escapada, apta como argumento de ``filename=`` en el filtro.
+    """
+    escapada = ruta.replace("\\", "\\\\")
+    escapada = escapada.replace(":", "\\:")
+    escapada = escapada.replace("'", "\\'")
+    return escapada
+
+
+def _stderr_indica_libass_ausente(stderr: str) -> bool:
+    """Indica si el ``stderr`` de ffmpeg sugiere que falta libass/el filtro."""
+    texto = (stderr or "").lower()
+    return any(marcador in texto for marcador in _MARCADORES_LIBASS_AUSENTE)
 
 
 class ConfiguracionSubtitulosError(ValueError):
@@ -95,7 +155,12 @@ def validar_config_subtitulos(subtitulos: AjustesSubtitulos) -> List[str]:
 def comando_quemar_subtitulos(entrada: str, ass_path: str, salida: str) -> List[str]:
     """Construye el comando ffmpeg que quema el ASS en el video (Req 7.2).
 
-    Usa ``-vf "ass=<ruta>"`` y copia el audio sin recodificar (``-c:a copy``).
+    Usa la opción **nombrada** ``ass=filename=<ruta escapada>`` en lugar de la
+    forma posicional ``ass=<ruta>``. ffmpeg 8.x rechaza la ruta como argumento
+    posicional del filtro (``No option name near '<ruta>.ass'``), mientras que
+    ``filename=`` es válido tanto en versiones antiguas como nuevas. La ruta se
+    escapa para el filtergraph con :func:`_escapar_ruta_ass`. El audio se copia
+    sin recodificar (``-c:a copy``).
 
     Args:
         entrada: Ruta del video de entrada.
@@ -111,7 +176,7 @@ def comando_quemar_subtitulos(entrada: str, ass_path: str, salida: str) -> List[
         "-i",
         entrada,
         "-vf",
-        "ass=%s" % ass_path,
+        "ass=filename=%s" % _escapar_ruta_ass(ass_path),
         "-c:a",
         "copy",
         salida,
@@ -174,13 +239,34 @@ def generar_y_quemar_subtitulos(
     # (3) Quemado con ffmpeg (Req 7.2, 7.10).
     salida_path = Path(salida)
     comando = comando_quemar_subtitulos(str(entrada), str(ass_path_obj), str(salida_path))
+
+    # Loguea el comando EXACTO (argv completo) antes de ejecutarlo, para poder
+    # reproducir manualmente la invocación al diagnosticar fallos.
+    logger.info("Ejecutando ffmpeg (subtítulos): %s", " ".join(comando))
     try:
         resultado = runner(comando)
     except OSError as exc:
         raise SubtitulosError(f"no se pudo ejecutar ffmpeg: {exc}") from exc
 
     if resultado.returncode != 0:
-        detalle = (resultado.stderr or "").strip() or "código de salida distinto de cero"
+        stderr_texto = (resultado.stderr or "").strip()
+
+        # Loguea el stderr COMPLETO y el comando a nivel error para diagnóstico.
+        logger.error(
+            "ffmpeg falló al quemar subtítulos (código %s). Comando: %s\nstderr:\n%s",
+            resultado.returncode,
+            " ".join(comando),
+            stderr_texto or "(vacío)",
+        )
+
+        # Detección de libass ausente / filtro de subtítulos no disponible: se
+        # ofrece un mensaje claro y accionable (Req 7.10).
+        if _stderr_indica_libass_ausente(stderr_texto):
+            raise SubtitulosError(
+                f"ffmpeg falló al quemar subtítulos: {_GUIA_LIBASS_AUSENTE}"
+            )
+
+        detalle = _recortar_stderr(stderr_texto) or "código de salida distinto de cero"
         raise SubtitulosError(f"ffmpeg falló al quemar subtítulos: {detalle}")
 
     comprobar = existe_salida if existe_salida is not None else (lambda p: p.exists())
@@ -200,4 +286,5 @@ __all__ = [
     "validar_config_subtitulos",
     "comando_quemar_subtitulos",
     "generar_y_quemar_subtitulos",
+    "_escapar_ruta_ass",
 ]

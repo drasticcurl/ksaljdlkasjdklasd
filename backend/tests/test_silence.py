@@ -213,6 +213,7 @@ def test_cortar_silencios_activado_invoca_auto_editor() -> None:
         umbral_db=-30.0,
         margen_ms=200,
         runner=runner,
+        engine="auto-editor",
     )
     assert resultado == Path("cortado.mp4")
     assert len(runner.llamadas) == 1
@@ -234,6 +235,7 @@ def test_cortar_silencios_falla_si_auto_editor_falla() -> None:
             umbral_db=-30.0,
             margen_ms=200,
             runner=runner,
+            engine="auto-editor",
         )
 
 
@@ -259,6 +261,7 @@ def test_cortar_silencios_incluye_stderr_en_el_motivo() -> None:
             umbral_db=-30.0,
             margen_ms=200,
             runner=runner,
+            engine="auto-editor",
         )
 
     mensaje = str(info.value)
@@ -283,6 +286,7 @@ def test_cortar_silencios_usa_stdout_si_stderr_vacio() -> None:
             umbral_db=-30.0,
             margen_ms=200,
             runner=runner,
+            engine="auto-editor",
         )
 
     mensaje = str(info.value)
@@ -349,6 +353,7 @@ def test_motivo_incluye_senal_para_codigo_247_sin_salida() -> None:
             umbral_db=-30.0,
             margen_ms=200,
             runner=runner,
+            engine="auto-editor",
         )
 
     mensaje = str(info.value)

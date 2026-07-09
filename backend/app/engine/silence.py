@@ -26,10 +26,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import errno
 
@@ -278,6 +279,377 @@ def _fmt(valor: float) -> str:
     return ("%.4f" % entero).rstrip("0").rstrip(".")
 
 
+# ===========================================================================
+# Motor nativo de ffmpeg (silencedetect + recorte con select/aselect)
+# ===========================================================================
+#
+# Alternativa a ``auto-editor`` que no depende de un binario externo firmado:
+# usa ffmpeg (ya presente para el resto del pipeline). El flujo es:
+#
+#   1. Detectar los tramos de silencio con el filtro ``silencedetect`` (que
+#      imprime ``silence_start``/``silence_end`` por stderr).
+#   2. Obtener la duración del video con ``ffprobe``.
+#   3. Calcular (lógica pura) los segmentos a CONSERVAR (complemento de los
+#      silencios), expandidos por el margen y fusionados.
+#   4. Recortar con ``select``/``aselect`` reconstruyendo la línea de tiempo.
+#
+# Las funciones de parseo y cálculo son PURAS para poder probarlas sin ffmpeg.
+
+# Regex de las marcas que imprime el filtro ``silencedetect`` en stderr.
+_RE_SILENCE_START = re.compile(r"silence_start:\s*(-?\d+(?:\.\d+)?)")
+_RE_SILENCE_END = re.compile(r"silence_end:\s*(-?\d+(?:\.\d+)?)")
+
+
+def parsear_silencedetect(stderr: str) -> List[Tuple[float, float]]:
+    """Extrae los tramos de silencio ``(inicio, fin)`` del stderr de ffmpeg (PURA).
+
+    El filtro ``silencedetect`` imprime líneas con ``silence_start: <t>`` y, más
+    tarde, ``silence_end: <t>``. Esta función empareja cada ``start`` con su
+    ``end`` siguiente. Si un ``start`` no tiene ``end`` (el silencio llega hasta
+    el final del audio), se registra con fin ``inf`` para que el llamador lo
+    recorte contra la duración real.
+
+    Args:
+        stderr: Salida de error de ffmpeg con el filtro ``silencedetect``.
+
+    Returns:
+        Lista ordenada de tuplas ``(inicio, fin)``; vacía si no hay silencios.
+    """
+    silencios: List[Tuple[float, float]] = []
+    inicio_pendiente: Optional[float] = None
+
+    for linea in (stderr or "").splitlines():
+        m_ini = _RE_SILENCE_START.search(linea)
+        if m_ini is not None:
+            inicio_pendiente = float(m_ini.group(1))
+            continue
+        m_fin = _RE_SILENCE_END.search(linea)
+        if m_fin is not None:
+            fin = float(m_fin.group(1))
+            if inicio_pendiente is not None:
+                silencios.append((inicio_pendiente, fin))
+                inicio_pendiente = None
+            else:
+                # end sin start previo: silencio desde el inicio del audio.
+                silencios.append((0.0, fin))
+
+    # start sin end: silencio hasta el final (se marca con inf).
+    if inicio_pendiente is not None:
+        silencios.append((inicio_pendiente, float("inf")))
+
+    return silencios
+
+
+def calcular_segmentos_conservar(
+    silencios: List[Tuple[float, float]], duracion: float, margen_s: float
+) -> List[Tuple[float, float]]:
+    """Calcula los segmentos a CONSERVAR (complemento de los silencios) (PURA).
+
+    A partir de los tramos de silencio y la duración total, obtiene el
+    complemento dentro de ``[0, duracion]`` (las partes con voz), expande cada
+    segmento conservado ``margen_s`` a cada lado (clamp a ``[0, duracion]``),
+    fusiona los solapados y descarta los de longitud <= 0.
+
+    Garantías (nunca salida vacía; nunca inicio > fin):
+
+    * Sin silencios -> ``[(0, duracion)]``.
+    * Todo silencio -> ``[(0, duracion)]`` (nunca se devuelve vacío).
+    * Resultado ordenado y sin solapes.
+
+    Args:
+        silencios: Tramos de silencio ``(inicio, fin)`` (fin puede ser ``inf``).
+        duracion: Duración total del medio en segundos (> 0).
+        margen_s: Margen en segundos a añadir a cada lado de lo conservado.
+
+    Returns:
+        Lista ordenada de segmentos ``(inicio, fin)`` a conservar.
+    """
+    if duracion <= 0:
+        return [(0.0, 0.0)]
+
+    # Normaliza y recorta los silencios a [0, duracion], ordenados por inicio.
+    normalizados: List[Tuple[float, float]] = []
+    for ini, fin in silencios:
+        ini_c = max(0.0, min(float(ini), duracion))
+        fin_c = duracion if fin == float("inf") else max(0.0, min(float(fin), duracion))
+        if fin_c > ini_c:
+            normalizados.append((ini_c, fin_c))
+    normalizados.sort()
+
+    # Fusiona silencios solapados para calcular el complemento correctamente.
+    silencios_fusionados: List[Tuple[float, float]] = []
+    for ini, fin in normalizados:
+        if silencios_fusionados and ini <= silencios_fusionados[-1][1]:
+            prev_ini, prev_fin = silencios_fusionados[-1]
+            silencios_fusionados[-1] = (prev_ini, max(prev_fin, fin))
+        else:
+            silencios_fusionados.append((ini, fin))
+
+    # Complemento: los tramos de [0, duracion] que NO son silencio.
+    conservar: List[Tuple[float, float]] = []
+    cursor = 0.0
+    for ini, fin in silencios_fusionados:
+        if ini > cursor:
+            conservar.append((cursor, ini))
+        cursor = max(cursor, fin)
+    if cursor < duracion:
+        conservar.append((cursor, duracion))
+
+    # Expande cada segmento conservado por el margen (clamp a [0, duracion]).
+    expandidos: List[Tuple[float, float]] = []
+    for ini, fin in conservar:
+        ini_e = max(0.0, ini - margen_s)
+        fin_e = min(duracion, fin + margen_s)
+        if fin_e > ini_e:
+            expandidos.append((ini_e, fin_e))
+
+    # Fusiona los segmentos conservados que se solapen tras la expansión.
+    fusionados: List[Tuple[float, float]] = []
+    for ini, fin in sorted(expandidos):
+        if fusionados and ini <= fusionados[-1][1]:
+            prev_ini, prev_fin = fusionados[-1]
+            fusionados[-1] = (prev_ini, max(prev_fin, fin))
+        else:
+            fusionados.append((ini, fin))
+
+    # Nunca devolver vacío (todo silencio -> conservar todo el video).
+    if not fusionados:
+        return [(0.0, duracion)]
+
+    return fusionados
+
+
+def construir_filtro_recorte(segmentos: List[Tuple[float, float]]) -> str:
+    """Construye el ``filter_complex`` de recorte con ``select``/``aselect`` (PURA).
+
+    Reconstruye la línea de tiempo conservando solo ``segmentos`` mediante
+    expresiones ``between(t, inicio, fin)`` unidas con ``+`` (OR lógico), y
+    reajusta los PTS de video y audio.
+
+    Args:
+        segmentos: Segmentos a conservar ``(inicio, fin)``.
+
+    Returns:
+        La cadena del ``filter_complex``.
+    """
+    sel = "+".join(
+        "between(t,%s,%s)" % (_fmt(s), _fmt(e)) for s, e in segmentos
+    )
+    return (
+        "[0:v]select='%s',setpts=N/FRAME_RATE/TB[v];"
+        "[0:a]aselect='%s',asetpts=N/SR/STB[a]" % (sel, sel)
+    )
+
+
+def comando_silencedetect(
+    entrada: str, umbral_db: float, min_silencio_s: float
+) -> List[str]:
+    """Construye el comando ffmpeg de detección de silencios (``silencedetect``).
+
+    No produce salida de video/audio (``-f null -`` descarta la salida); las
+    marcas ``silence_start``/``silence_end`` se emiten por stderr.
+
+    Args:
+        entrada: Ruta del video de entrada.
+        umbral_db: Umbral de ruido en dB (negativo; se usa directo en ``noise=``).
+        min_silencio_s: Duración mínima de silencio en segundos (``d=``).
+
+    Returns:
+        La lista de argumentos del comando ffmpeg.
+    """
+    return [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostats",
+        "-i",
+        entrada,
+        "-af",
+        "silencedetect=noise=%sdB:d=%s" % (_fmt(umbral_db), _fmt(min_silencio_s)),
+        "-f",
+        "null",
+        "-",
+    ]
+
+
+def comando_recorte_ffmpeg(entrada: str, salida: str, filtro: str) -> List[str]:
+    """Construye el comando ffmpeg de recorte con ``filter_complex``.
+
+    Args:
+        entrada: Ruta del video de entrada.
+        salida: Ruta del video recortado a producir.
+        filtro: ``filter_complex`` construido con :func:`construir_filtro_recorte`.
+
+    Returns:
+        La lista de argumentos del comando ffmpeg.
+    """
+    return [
+        "ffmpeg",
+        "-y",
+        "-i",
+        entrada,
+        "-filter_complex",
+        filtro,
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        salida,
+    ]
+
+
+def obtener_duracion(entrada: str, runner: Runner = ejecutar_comando) -> float:
+    """Obtiene la duración del medio (segundos) con ``ffprobe``.
+
+    Args:
+        entrada: Ruta del medio a inspeccionar.
+        runner: Ejecutor de comandos inyectable.
+
+    Returns:
+        La duración en segundos.
+
+    Raises:
+        SilenceProcessingError: Si ``ffprobe`` falla o su salida no es un número.
+    """
+    comando = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nk=1:np=1",
+        entrada,
+    ]
+    try:
+        resultado = runner(comando)
+    except OSError as exc:
+        raise SilenceProcessingError(
+            f"no se pudo ejecutar ffprobe para obtener la duración: {exc}"
+        ) from exc
+
+    if resultado.returncode != 0:
+        detalle = _recortar_salida((resultado.stderr or "").strip()) or (
+            "código de salida distinto de cero"
+        )
+        raise SilenceProcessingError(
+            f"ffprobe falló al obtener la duración (código {resultado.returncode}): "
+            f"{detalle}"
+        )
+
+    texto = (resultado.stdout or "").strip()
+    try:
+        return float(texto)
+    except (ValueError, TypeError) as exc:
+        raise SilenceProcessingError(
+            f"no se pudo interpretar la duración devuelta por ffprobe: {texto!r}"
+        ) from exc
+
+
+def cortar_silencios_ffmpeg(
+    entrada: Union[str, Path],
+    salida: Union[str, Path],
+    umbral_db: float,
+    margen_ms: float,
+    runner: Runner = ejecutar_comando,
+) -> Path:
+    """Corta los silencios usando el motor nativo de ffmpeg (Req 4.1, 4.5).
+
+    Orquesta: detección (``silencedetect``) -> duración (``ffprobe``) -> cálculo
+    de segmentos a conservar (puro) -> recorte (``select``/``aselect``). Si algún
+    comando ffmpeg/ffprobe devuelve código != 0 se lanza
+    :class:`SilenceProcessingError` con el código y el stderr recortado.
+
+    Para este motor el umbral se usa en **dB directo** y el margen se convierte a
+    segundos (``margen_ms / 1000``).
+
+    Args:
+        entrada: Ruta del video de entrada.
+        salida: Ruta del video recortado a producir.
+        umbral_db: Umbral de ruido en dB (UI, negativo).
+        margen_ms: Margen en milisegundos.
+        runner: Ejecutor de comandos inyectable.
+
+    Returns:
+        La ruta del video recortado.
+
+    Raises:
+        SilenceProcessingError: Si ffmpeg/ffprobe fallan.
+    """
+    entrada_path = Path(entrada)
+    salida_path = Path(salida)
+    margen_s = float(margen_ms) / 1000.0
+
+    logger.info("ffmpeg resuelto en: %s", shutil.which("ffmpeg") or "(no encontrado)")
+    logger.info("ffprobe resuelto en: %s", shutil.which("ffprobe") or "(no encontrado)")
+    _loguear_archivo_entrada(entrada_path)
+
+    # (1) Detección de silencios.
+    cmd_detect = comando_silencedetect(
+        str(entrada_path), umbral_db, config.DEFAULT_MIN_SILENCIO_S
+    )
+    logger.info("Ejecutando silencedetect: %s", " ".join(cmd_detect))
+    try:
+        res_detect = runner(cmd_detect)
+    except OSError as exc:
+        raise SilenceProcessingError(
+            f"no se pudo ejecutar ffmpeg (silencedetect): {exc}"
+        ) from exc
+    if res_detect.returncode != 0:
+        detalle = _recortar_salida((res_detect.stderr or "").strip())
+        interpretacion = interpretar_codigo_salida(res_detect.returncode)
+        sufijo = f" ({interpretacion})" if interpretacion else ""
+        logger.error(
+            "ffmpeg (silencedetect) falló (código %s). Comando: %s\nstderr:\n%s",
+            res_detect.returncode,
+            " ".join(cmd_detect),
+            (res_detect.stderr or "").strip() or "(vacío)",
+        )
+        raise SilenceProcessingError(
+            f"ffmpeg (silencedetect) falló (código {res_detect.returncode}): "
+            f"{detalle or 'sin salida de diagnóstico'}{sufijo}"
+        )
+
+    silencios = parsear_silencedetect(res_detect.stderr or "")
+
+    # (2) Duración total del medio.
+    duracion = obtener_duracion(str(entrada_path), runner)
+
+    # (3) Cálculo (puro) de los segmentos a conservar.
+    segmentos = calcular_segmentos_conservar(silencios, duracion, margen_s)
+    filtro = construir_filtro_recorte(segmentos)
+    logger.info(
+        "Silencios detectados: %d; segmentos a conservar: %d",
+        len(silencios),
+        len(segmentos),
+    )
+
+    # (4) Recorte.
+    cmd_recorte = comando_recorte_ffmpeg(str(entrada_path), str(salida_path), filtro)
+    logger.info("Ejecutando recorte ffmpeg: %s", " ".join(cmd_recorte))
+    try:
+        res_recorte = runner(cmd_recorte)
+    except OSError as exc:
+        raise SilenceProcessingError(
+            f"no se pudo ejecutar ffmpeg (recorte): {exc}"
+        ) from exc
+    if res_recorte.returncode != 0:
+        detalle = _recortar_salida((res_recorte.stderr or "").strip())
+        interpretacion = interpretar_codigo_salida(res_recorte.returncode)
+        sufijo = f" ({interpretacion})" if interpretacion else ""
+        logger.error(
+            "ffmpeg (recorte) falló (código %s). Comando: %s\nstderr:\n%s",
+            res_recorte.returncode,
+            " ".join(cmd_recorte),
+            (res_recorte.stderr or "").strip() or "(vacío)",
+        )
+        raise SilenceProcessingError(
+            f"ffmpeg (recorte) falló (código {res_recorte.returncode}): "
+            f"{detalle or 'sin salida de diagnóstico'}{sufijo}"
+        )
+
+    return salida_path
+
+
 def cortar_silencios(
     entrada: Union[str, Path],
     salida: Union[str, Path],
@@ -287,6 +659,7 @@ def cortar_silencios(
     margen_ms: Optional[int] = None,
     validador: Optional[ValidadorSilencio] = None,
     runner: Runner = ejecutar_comando,
+    engine: Optional[str] = None,
 ) -> Path:
     """Ejecuta el Paso 2 (corte de silencios) o lo omite si está desactivado.
 
@@ -307,6 +680,8 @@ def cortar_silencios(
         validador: :class:`ValidadorSilencio` con el último valor válido; si es
             ``None`` se crea uno con los valores por defecto.
         runner: Ejecutor de comandos inyectable.
+        engine: Motor de corte a usar (``"ffmpeg"`` o ``"auto-editor"``). Si es
+            ``None`` se usa ``config.SILENCE_ENGINE`` (por defecto ``"ffmpeg"``).
 
     Returns:
         La ruta del video resultante: la de **entrada** si está desactivado, o la
@@ -326,6 +701,8 @@ def cortar_silencios(
         validador = ValidadorSilencio()
 
     # Req 4.4: validar (y conservar el último válido ante fuera de rango).
+    # La validación se hace ANTES de elegir el motor, para rechazar valores
+    # fuera de rango independientemente del backend.
     umbral_efectivo = (
         validador.actualizar_umbral(umbral_db)
         if umbral_db is not None
@@ -337,6 +714,21 @@ def cortar_silencios(
         else validador.margen_ms
     )
 
+    # Selección del motor (Req 4.1): por defecto ffmpeg nativo; "auto-editor" usa
+    # la ruta histórica. Cualquier otro valor recae en ffmpeg.
+    motor = engine if engine is not None else config.SILENCE_ENGINE
+    if motor != "auto-editor":
+        # Motor ffmpeg: umbral en dB directo, margen en ms (se convierte a s
+        # dentro de la función).
+        return cortar_silencios_ffmpeg(
+            entrada_path,
+            salida,
+            umbral_efectivo,
+            margen_efectivo,
+            runner=runner,
+        )
+
+    # -------------------- Motor auto-editor (histórico) --------------------
     # Req 4.2: conversión de unidades UI -> motor.
     umbral_pct = umbral_db_a_pct(umbral_efectivo)
     margen_s = margen_ms_a_s(margen_efectivo)
@@ -452,5 +844,12 @@ __all__ = [
     "ValidadorSilencio",
     "comando_auto_editor",
     "cortar_silencios",
+    "cortar_silencios_ffmpeg",
+    "parsear_silencedetect",
+    "calcular_segmentos_conservar",
+    "construir_filtro_recorte",
+    "comando_silencedetect",
+    "comando_recorte_ffmpeg",
+    "obtener_duracion",
     "interpretar_codigo_salida",
 ]
