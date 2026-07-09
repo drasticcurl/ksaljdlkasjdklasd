@@ -28,6 +28,8 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   },
   silencios: {
     activado: true,
+    // Método por defecto: "voz" (IA/VAD), más robusto que el umbral de dB.
+    modo: 'voz',
     umbral_db: -30,
     margen_ms: 200,
   },
@@ -35,6 +37,11 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   transiciones: {
     tipo: 'ninguna',
     duracion_ms: 400,
+  },
+  // Risas: por defecto activadas (se recortan los "jaja/jeje/...").
+  risas: {
+    activado: true,
+    margen_ms: 100,
   },
   transcripcion: {
     idioma: 'es',
@@ -46,12 +53,17 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
     revisar: false,
     // Texto en minúscula desactivado por defecto (se conserva la transcripción).
     minusculas: false,
+    // Estilo por defecto: karaoke bold (resalta la palabra activa).
+    preset: 'bold_pop',
+    color_resaltado: '#FFE500',
     posicion_vertical: 'inferior',
     posicion_horizontal: 'centro',
     pos_vertical_pct: 85,
     pos_horizontal_pct: 50,
     margen_px: 60,
-    fuente: 'Arial',
+    // Fuente por defecto: Poppins (bold). Requiere tenerla instalada en el
+    // sistema; si no está, libass usa una alternativa.
+    fuente: 'Poppins',
     tamano: 72,
     color: '#FFFFFF',
     color_borde: '#000000',

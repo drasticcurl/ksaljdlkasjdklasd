@@ -650,6 +650,138 @@ def cortar_silencios_ffmpeg(
     return salida_path
 
 
+# ===========================================================================
+# Motor VAD (voz) — detección de voz con IA (Silero, vía faster-whisper)
+#
+# En vez de decidir por volumen (dB), detecta los tramos donde hay VOZ HUMANA y
+# corta el resto. Es más robusto ante ruido de fondo/música. Reutiliza el mismo
+# cálculo de segmentos a conservar y el recorte con select/aselect del motor
+# ffmpeg. La detección de voz es INYECTABLE para poder probar la orquestación
+# sin cargar el modelo real.
+# ===========================================================================
+
+# El detector de voz inyectable tiene la firma ``(ruta_video) -> lista de
+# (inicio_s, fin_s)`` de los tramos con voz, en segundos.
+
+
+def deteccion_voz_silero(entrada: str) -> List[Tuple[float, float]]:
+    """Detecta los tramos con voz usando el VAD Silero de faster-whisper.
+
+    Decodifica el audio a 16 kHz mono y ejecuta el VAD (modelo Silero incluido en
+    faster-whisper), devolviendo los tramos de voz en segundos. Se importa
+    faster-whisper de forma diferida para no exigirlo al importar este módulo
+    (los tests inyectan su propio detector).
+
+    Returns:
+        Lista de tramos ``(inicio_s, fin_s)`` con voz, en segundos.
+    """
+    from faster_whisper.audio import decode_audio  # import diferido
+    from faster_whisper.vad import get_speech_timestamps  # import diferido
+
+    sample_rate = 16000
+    audio = decode_audio(entrada, sampling_rate=sample_rate)
+    tramos = get_speech_timestamps(audio, sampling_rate=sample_rate)
+    segmentos: List[Tuple[float, float]] = []
+    for t in tramos:
+        inicio = float(t["start"]) / sample_rate
+        fin = float(t["end"]) / sample_rate
+        if fin > inicio:
+            segmentos.append((inicio, fin))
+    return segmentos
+
+
+def _silencios_desde_voz(
+    voz: List[Tuple[float, float]], duracion: float
+) -> List[Tuple[float, float]]:
+    """Devuelve los tramos SIN voz (complemento de ``voz``) dentro de ``[0, duracion]`` (PURA)."""
+    silencios: List[Tuple[float, float]] = []
+    cursor = 0.0
+    for ini, fin in sorted(voz):
+        ini_c = max(0.0, min(float(ini), duracion))
+        fin_c = max(0.0, min(float(fin), duracion))
+        if ini_c > cursor:
+            silencios.append((cursor, ini_c))
+        cursor = max(cursor, fin_c)
+    if cursor < duracion:
+        silencios.append((cursor, duracion))
+    return silencios
+
+
+def cortar_silencios_vad(
+    entrada: Union[str, Path],
+    salida: Union[str, Path],
+    margen_ms: float,
+    *,
+    runner: Runner = ejecutar_comando,
+    detector_voz=deteccion_voz_silero,
+) -> Path:
+    """Corta los silencios por **detección de voz (IA/VAD)** en lugar de por dB.
+
+    Flujo: detectar voz (``detector_voz``) -> duración (``ffprobe``) -> calcular
+    los segmentos a conservar (voz + margen, fusionados; se reutiliza
+    :func:`calcular_segmentos_conservar` sobre el complemento) -> recortar con
+    ``select``/``aselect``.
+
+    Args:
+        entrada: Ruta del video de entrada.
+        salida: Ruta del video recortado a producir.
+        margen_ms: Margen en milisegundos a conservar a cada lado de la voz.
+        runner: Ejecutor de comandos inyectable (ffprobe/ffmpeg).
+        detector_voz: Detector de voz inyectable; por defecto el VAD Silero.
+
+    Returns:
+        La ruta del video recortado.
+
+    Raises:
+        SilenceProcessingError: Si la detección de voz o ffmpeg/ffprobe fallan.
+    """
+    entrada_path = Path(entrada)
+    salida_path = Path(salida)
+    margen_s = float(margen_ms) / 1000.0
+
+    logger.info("ffmpeg resuelto en: %s", shutil.which("ffmpeg") or "(no encontrado)")
+    _loguear_archivo_entrada(entrada_path)
+
+    # (1) Detección de voz (IA/VAD).
+    try:
+        voz = detector_voz(str(entrada_path))
+    except Exception as exc:  # noqa: BLE001 - se traduce a error del paso
+        raise SilenceProcessingError(
+            f"la detección de voz (VAD) falló: {exc}"
+        ) from exc
+
+    # (2) Duración total del medio.
+    duracion = obtener_duracion(str(entrada_path), runner)
+
+    # (3) Segmentos a conservar: complemento de los NO-voz, expandido por margen.
+    silencios = _silencios_desde_voz(voz, duracion)
+    segmentos = calcular_segmentos_conservar(silencios, duracion, margen_s)
+    filtro = construir_filtro_recorte(segmentos)
+    logger.info(
+        "VAD: tramos de voz detectados: %d; segmentos a conservar: %d",
+        len(voz),
+        len(segmentos),
+    )
+
+    # (4) Recorte.
+    cmd_recorte = comando_recorte_ffmpeg(str(entrada_path), str(salida_path), filtro)
+    logger.info("Ejecutando recorte ffmpeg (VAD): %s", " ".join(cmd_recorte))
+    try:
+        res_recorte = runner(cmd_recorte)
+    except OSError as exc:
+        raise SilenceProcessingError(
+            f"no se pudo ejecutar ffmpeg (recorte VAD): {exc}"
+        ) from exc
+    if res_recorte.returncode != 0:
+        detalle = _recortar_salida((res_recorte.stderr or "").strip())
+        raise SilenceProcessingError(
+            f"ffmpeg (recorte VAD) falló (código {res_recorte.returncode}): "
+            f"{detalle or 'sin salida de diagnóstico'}"
+        )
+
+    return salida_path
+
+
 def cortar_silencios(
     entrada: Union[str, Path],
     salida: Union[str, Path],
@@ -714,9 +846,18 @@ def cortar_silencios(
         else validador.margen_ms
     )
 
-    # Selección del motor (Req 4.1): por defecto ffmpeg nativo; "auto-editor" usa
-    # la ruta histórica. Cualquier otro valor recae en ffmpeg.
+    # Selección del motor (Req 4.1): por defecto ffmpeg nativo; "vad" usa
+    # detección de voz por IA; "auto-editor" usa la ruta histórica. Cualquier
+    # otro valor recae en ffmpeg.
     motor = engine if engine is not None else config.SILENCE_ENGINE
+    if motor == "vad":
+        # Motor VAD (voz): no usa umbral de dB; conserva la voz + margen.
+        return cortar_silencios_vad(
+            entrada_path,
+            salida,
+            margen_efectivo,
+            runner=runner,
+        )
     if motor != "auto-editor":
         # Motor ffmpeg: umbral en dB directo, margen en ms (se convierte a s
         # dentro de la función).
@@ -845,6 +986,8 @@ __all__ = [
     "comando_auto_editor",
     "cortar_silencios",
     "cortar_silencios_ffmpeg",
+    "cortar_silencios_vad",
+    "deteccion_voz_silero",
     "parsear_silencedetect",
     "calcular_segmentos_conservar",
     "construir_filtro_recorte",

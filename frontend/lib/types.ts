@@ -66,13 +66,26 @@ export interface AjustesGenerales {
   fps: number;
 }
 
+/** Método de corte de silencios: por umbral de dB o por voz (IA/VAD). */
+export type ModoSilencio = 'db' | 'voz';
+
 /** Ajustes del corte de silencios en unidades de la UI (Req 4, 9.2). */
 export interface AjustesSilencios {
   /** Activa/desactiva el paso de corte de silencios (Req 4.3). */
   activado: boolean;
+  /** Método: "db" (umbral) o "voz" (detección de voz con IA/VAD). */
+  modo: ModoSilencio;
   /** Umbral de silencio en dB (UI): -60..0. */
   umbral_db: number;
   /** Margen en milisegundos (UI): 0..5000. */
+  margen_ms: number;
+}
+
+/** Ajustes de eliminación de risas (jaja/jeje/...) por transcripción. */
+export interface AjustesRisas {
+  /** Si es `true`, se recortan los segmentos de risa del video. */
+  activado: boolean;
+  /** Margen (ms) recortado a cada lado de cada risa: 0..2000. */
   margen_ms: number;
 }
 
@@ -100,6 +113,9 @@ export interface AjustesTranscripcion {
   modelo: string;
 }
 
+/** Preset de estilo de subtítulo. */
+export type PresetSubtitulo = 'clasico' | 'resaltado' | 'bold_pop';
+
 /** Ajustes de subtítulos y su animación (Req 6, 7, 9.1). */
 export interface AjustesSubtitulos {
   /** Máximo de palabras por grupo: UI 1..20 / motor 1..10, def 4. */
@@ -108,6 +124,10 @@ export interface AjustesSubtitulos {
   revisar: boolean;
   /** Si es `true`, todo el texto de los subtítulos se muestra en minúscula. */
   minusculas: boolean;
+  /** Preset de estilo: `clasico` (línea) o `resaltado`/`bold_pop` (karaoke). */
+  preset: PresetSubtitulo;
+  /** Color de acento `#RRGGBB` de la palabra activa (presets de karaoke). */
+  color_resaltado: string;
   posicion_vertical: PosicionVertical;
   posicion_horizontal: PosicionHorizontal;
   /** Posición vertical como % de la altura: 0..100. */
@@ -153,6 +173,7 @@ export interface Ajustes {
   generales: AjustesGenerales;
   silencios: AjustesSilencios;
   transiciones: AjustesTransiciones;
+  risas: AjustesRisas;
   transcripcion: AjustesTranscripcion;
   subtitulos: AjustesSubtitulos;
   /** Música opcional: `null` si no se agregó WAV (el paso 5 se omite). */

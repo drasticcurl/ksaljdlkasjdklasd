@@ -36,6 +36,8 @@ export const RANGOS_UI = {
   'silencios.margen_ms': { min: 0, max: 5000 },
   // Transiciones — duración del efecto entre clips (ms).
   'transiciones.duracion_ms': { min: 100, max: 2000 },
+  // Risas — margen (ms) recortado a cada lado de cada risa.
+  'risas.margen_ms': { min: 0, max: 2000 },
   // Subtítulos (Req 9.1).
   'subtitulos.pos_vertical_pct': { min: 0, max: 100 },
   'subtitulos.pos_horizontal_pct': { min: 0, max: 100 },
@@ -103,6 +105,7 @@ export const TIPOS_TRANSICION: ReadonlyArray<{ valor: string; etiqueta: string }
 
 /** Fuentes disponibles para los subtítulos (Req 9.1). */
 export const FUENTES_DISPONIBLES: readonly string[] = [
+  'Poppins',
   'Arial',
   'Helvetica',
   'Times New Roman',
@@ -113,6 +116,19 @@ export const FUENTES_DISPONIBLES: readonly string[] = [
   'Roboto',
   'Montserrat',
   'Open Sans',
+];
+
+/** Presets de estilo de subtítulo seleccionables en la UI. */
+export const PRESETS_SUBTITULO: ReadonlyArray<{ valor: string; etiqueta: string }> = [
+  { valor: 'bold_pop', etiqueta: 'Bold Pop (karaoke)' },
+  { valor: 'resaltado', etiqueta: 'Resaltado (karaoke)' },
+  { valor: 'clasico', etiqueta: 'Clásico (línea)' },
+];
+
+/** Métodos de corte de silencios seleccionables en la UI. */
+export const MODOS_SILENCIO: ReadonlyArray<{ valor: string; etiqueta: string }> = [
+  { valor: 'voz', etiqueta: 'Inteligente (voz, IA)' },
+  { valor: 'db', etiqueta: 'Umbral de volumen (dB)' },
 ];
 
 /** Formato de color hexadecimal `#RRGGBB` (Req 7.8, 9.1). */

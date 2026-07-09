@@ -11,9 +11,9 @@
  * Requisitos: 9.2.
  */
 
-import type { AjustesSilencios } from '@/lib/types';
+import type { AjustesSilencios, ModoSilencio } from '@/lib/types';
 import NumberField from './NumberField';
-import { RANGOS_UI } from './ranges';
+import { MODOS_SILENCIO, RANGOS_UI } from './ranges';
 
 export interface SilenceSettingsProps {
   valor: AjustesSilencios;
@@ -43,14 +43,41 @@ export default function SilenceSettings({
         <span>Activar corte de silencios</span>
       </label>
 
-      <NumberField
-        etiqueta="Umbral de silencio"
-        campo="silencios.umbral_db"
-        unidad="dB"
-        valor={valor.umbral_db}
-        rango={RANGOS_UI['silencios.umbral_db']}
-        onChange={(umbral_db) => onChange({ ...valor, umbral_db })}
-      />
+      <label className="flex flex-col gap-1 text-sm text-gray-300">
+        <span>Método</span>
+        <select
+          value={valor.modo}
+          data-testid="campo-silencios.modo"
+          onChange={(e) =>
+            onChange({ ...valor, modo: e.target.value as ModoSilencio })
+          }
+          className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-white"
+        >
+          {MODOS_SILENCIO.map((m) => (
+            <option key={m.valor} value={m.valor}>
+              {m.etiqueta}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {/* El umbral en dB solo aplica al método por volumen. */}
+      {valor.modo === 'db' && (
+        <NumberField
+          etiqueta="Umbral de silencio"
+          campo="silencios.umbral_db"
+          unidad="dB"
+          valor={valor.umbral_db}
+          rango={RANGOS_UI['silencios.umbral_db']}
+          onChange={(umbral_db) => onChange({ ...valor, umbral_db })}
+        />
+      )}
+
+      {valor.modo === 'voz' && (
+        <p className="text-xs text-gray-500">
+          Detecta la voz con IA y recorta lo demás (ignora el umbral de dB).
+        </p>
+      )}
 
       <NumberField
         etiqueta="Margen"

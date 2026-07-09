@@ -44,6 +44,13 @@ TipoTransicion = Literal[
     "deslizar_arriba",
 ]
 
+# Preset de estilo de subtítulo. ``clasico`` es la línea completa con slide-up +
+# fade; ``resaltado``/``bold_pop`` activan el karaoke (resalta la palabra activa).
+PresetSubtitulo = Literal["clasico", "resaltado", "bold_pop"]
+
+# Método de corte de silencios: por umbral de dB o por detección de voz (IA/VAD).
+ModoSilencio = Literal["db", "voz"]
+
 
 class ResolucionObjetivo(BaseModel):
     """Resolución vertical de salida (Req 3.2). Rangos validados en la tarea 8."""
@@ -67,6 +74,8 @@ class AjustesSilencios(BaseModel):
     """
 
     activado: bool = Field(default=config.DEFAULT_SILENCIO_ACTIVADO)
+    # Método: "db" (umbral de decibelios) o "voz" (detección de voz con IA/VAD).
+    modo: ModoSilencio = Field(default=config.DEFAULT_SILENCIO_MODO)
     umbral_db: float = Field(default=config.DEFAULT_SILENCIO_UMBRAL_DB)
     margen_ms: int = Field(default=config.DEFAULT_SILENCIO_MARGEN_MS)
 
@@ -107,6 +116,11 @@ class AjustesSubtitulos(BaseModel):
     revisar: bool = Field(default=config.DEFAULT_SUBTITULOS_REVISAR)
     # Si está activado, todo el texto de los subtítulos se muestra en minúscula.
     minusculas: bool = Field(default=config.DEFAULT_SUBTITULOS_MINUSCULAS)
+    # Preset de estilo: "clasico" (línea completa) o "resaltado"/"bold_pop"
+    # (karaoke, resalta la palabra activa en el color de acento).
+    preset: PresetSubtitulo = Field(default=config.DEFAULT_SUBTITULOS_PRESET)
+    # Color de acento (#RRGGBB) de la palabra activa en los presets de karaoke.
+    color_resaltado: str = Field(default=config.DEFAULT_SUBTITULOS_COLOR_RESALTADO)
     posicion_vertical: PosicionVertical = Field(default="inferior")
     posicion_horizontal: PosicionHorizontal = Field(default="centro")
     pos_vertical_pct: float = Field(default=85.0)
@@ -121,6 +135,18 @@ class AjustesSubtitulos(BaseModel):
     anim_entrada_ms: int = Field(default=config.DEFAULT_ANIM_ENTRADA_MS)
     anim_salida_ms: int = Field(default=config.DEFAULT_ANIM_SALIDA_MS)
     slide_px: int = Field(default=config.DEFAULT_SLIDE_PX)
+
+
+class AjustesRisas(BaseModel):
+    """Ajustes de la eliminación de risas (jaja/jeje/...) por transcripción.
+
+    Cuando ``activado`` es ``True``, tras transcribir se detectan las palabras de
+    risa y se recortan esos segmentos del video (con ``margen_ms`` de recorte a
+    cada lado), remapeando los tiempos de las palabras restantes.
+    """
+
+    activado: bool = Field(default=config.DEFAULT_RISAS_ACTIVADO)
+    margen_ms: int = Field(default=config.DEFAULT_RISAS_MARGEN_MS)
 
 
 class AjustesMusica(BaseModel):
@@ -142,6 +168,7 @@ class Ajustes(BaseModel):
     generales: AjustesGenerales = Field(default_factory=AjustesGenerales)
     silencios: AjustesSilencios = Field(default_factory=AjustesSilencios)
     transiciones: AjustesTransiciones = Field(default_factory=AjustesTransiciones)
+    risas: AjustesRisas = Field(default_factory=AjustesRisas)
     transcripcion: AjustesTranscripcion = Field(default_factory=AjustesTranscripcion)
     subtitulos: AjustesSubtitulos = Field(default_factory=AjustesSubtitulos)
     musica: Optional[AjustesMusica] = Field(default=None)
@@ -163,11 +190,18 @@ class Palabra(BaseModel):
 
 
 class GrupoSubtitulo(BaseModel):
-    """Grupo de palabras mostrado como una línea de subtítulo (Req 6.4)."""
+    """Grupo de palabras mostrado como una línea de subtítulo (Req 6.4).
+
+    ``palabras`` conserva (cuando está disponible) las palabras del grupo con sus
+    timestamps individuales, necesarias para el resaltado palabra por palabra
+    (karaoke). Es opcional: los grupos editados a mano en la revisión pueden no
+    incluirlas, en cuyo caso el karaoke reparte el tiempo del grupo por igual.
+    """
 
     texto: str
     inicio_s: float
     fin_s: float
+    palabras: Optional[List[Palabra]] = Field(default=None)
 
 
 # ===========================================================================
@@ -267,6 +301,11 @@ RANGOS_MOTOR: Dict[str, Tuple[float, float]] = {
         config.TRANSICION_DURACION_MS_MIN,
         config.TRANSICION_DURACION_MS_MAX,
     ),
+    # Risas — margen (ms) de recorte a cada lado del segmento de risa.
+    "risas.margen_ms": (
+        config.RISAS_MARGEN_MS_MIN,
+        config.RISAS_MARGEN_MS_MAX,
+    ),
     # Subtítulos — rangos del motor (Req 7.x); más estrictos que la UI (Req 9.1).
     "subtitulos.pos_vertical_pct": (0.0, 100.0),   # 0..100 % de la altura (Req 9.1)
     "subtitulos.pos_horizontal_pct": (0.0, 100.0),  # 0..100 % del ancho (Req 9.1)
@@ -356,6 +395,8 @@ def validar_ajustes(ajustes: "Ajustes") -> List[str]:
         invalidos.append("subtitulos.color")
     if not color_valido(ajustes.subtitulos.color_borde):
         invalidos.append("subtitulos.color_borde")
+    if not color_valido(ajustes.subtitulos.color_resaltado):
+        invalidos.append("subtitulos.color_resaltado")
 
     return invalidos
 
@@ -386,6 +427,9 @@ __all__: List[str] = [
     "AjustesSilencios",
     "AjustesTransiciones",
     "TipoTransicion",
+    "PresetSubtitulo",
+    "ModoSilencio",
+    "AjustesRisas",
     "AjustesTranscripcion",
     "AjustesSubtitulos",
     "AjustesMusica",

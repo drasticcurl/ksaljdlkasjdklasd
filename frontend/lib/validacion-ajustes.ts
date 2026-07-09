@@ -106,6 +106,11 @@ const CAMPOS_NUMERICOS: ReadonlyArray<{
     leer: (a) => a.transiciones.duracion_ms,
   },
   {
+    campo: 'risas.margen_ms',
+    etiqueta: 'Margen de las risas',
+    leer: (a) => a.risas.margen_ms,
+  },
+  {
     campo: 'subtitulos.pos_vertical_pct',
     etiqueta: 'Posición vertical del subtítulo',
     leer: (a) => a.subtitulos.pos_vertical_pct,
@@ -180,6 +185,12 @@ export function validarAjustes(ajustes: Ajustes): ResultadoValidacion {
     return invalido(
       'subtitulos.color_borde',
       'El color del borde debe tener formato #RRGGBB.',
+    );
+  }
+  if (!colorValido(ajustes.subtitulos.color_resaltado)) {
+    return invalido(
+      'subtitulos.color_resaltado',
+      'El color de acento debe tener formato #RRGGBB.',
     );
   }
 
