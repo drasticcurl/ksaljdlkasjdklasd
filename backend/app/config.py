@@ -193,6 +193,10 @@ DEFAULT_FUENTE: str = "Arial"
 DEFAULT_COLOR: str = "#FFFFFF"
 DEFAULT_COLOR_BORDE: str = "#000000"
 
+# Si está activado, todo el texto de los subtítulos se muestra en minúscula.
+# Por defecto desactivado (se conserva el texto tal cual lo transcribe el modelo).
+DEFAULT_SUBTITULOS_MINUSCULAS: bool = False
+
 # Música / ducking (Req 8.4, 8.5, 8.6).
 DEFAULT_VOLUMEN_MUSICA_PCT: int = 30
 DEFAULT_REDUCCION_DB: float = 12.0
