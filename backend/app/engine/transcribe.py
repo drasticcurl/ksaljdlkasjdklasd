@@ -31,6 +31,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
+from app import config
 from app.engine.proc import Runner, ejecutar_comando
 from app.models.settings import (
     AjustesTranscripcion,
@@ -100,7 +101,7 @@ def comando_extraer_audio(video: str, audio_wav: str) -> List[str]:
         La lista de argumentos del comando ffmpeg.
     """
     return [
-        "ffmpeg",
+        config.FFMPEG_BIN,
         "-y",
         "-i",
         video,

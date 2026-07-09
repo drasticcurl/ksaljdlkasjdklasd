@@ -458,7 +458,7 @@ def comando_silencedetect(
         La lista de argumentos del comando ffmpeg.
     """
     return [
-        "ffmpeg",
+        config.FFMPEG_BIN,
         "-hide_banner",
         "-nostats",
         "-i",
@@ -483,7 +483,7 @@ def comando_recorte_ffmpeg(entrada: str, salida: str, filtro: str) -> List[str]:
         La lista de argumentos del comando ffmpeg.
     """
     return [
-        "ffmpeg",
+        config.FFMPEG_BIN,
         "-y",
         "-i",
         entrada,
@@ -511,7 +511,7 @@ def obtener_duracion(entrada: str, runner: Runner = ejecutar_comando) -> float:
         SilenceProcessingError: Si ``ffprobe`` falla o su salida no es un número.
     """
     comando = [
-        "ffprobe",
+        config.FFPROBE_BIN,
         "-v",
         "error",
         "-show_entries",

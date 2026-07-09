@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Union
 
+from app import config
 from app.engine.proc import Runner, ejecutar_comando
 from app.models.settings import RANGOS_MOTOR, AjustesMusica
 from app.util.units import dbfs_a_amplitud
@@ -191,7 +192,7 @@ def comando_mezclar_musica(
         La lista de argumentos del comando ffmpeg.
     """
     return [
-        "ffmpeg",
+        config.FFMPEG_BIN,
         "-y",
         "-i",
         video,

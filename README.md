@@ -245,6 +245,46 @@ Debe responder `{"estado": "ok"}`. Si no responde, el backend no está arrancado
   de marcar el Job como fallido cuando el quemado de subtítulos falla. Está
   desactivado por defecto.
 
+### ffmpeg y libass
+
+El **quemado de subtítulos** requiere un `ffmpeg` compilado con **libass** (el
+filtro `ass`). Algunos builds —incluido el `ffmpeg` de Homebrew en ciertas
+versiones— **no incluyen libass**, por lo que el filtro `ass` no existe
+(`No such filter: 'ass'`) y no se pueden quemar los subtítulos. Reinstalar ese
+mismo build no ayuda si no trae libass.
+
+**Cómo verificar si tu `ffmpeg` incluye libass:**
+
+```
+ffmpeg -hide_banner -filters | grep -w ass   # si no aparece la línea, falta libass
+ffmpeg -buildconf | grep -i libass           # busca --enable-libass en la config
+```
+
+Al arrancar, el backend también avisa con un **WARNING no fatal** si el `ffmpeg`
+configurado no incluye el filtro `ass`.
+
+**Si tu `ffmpeg` no trae libass**, tienes tres opciones:
+
+1. **Instalar/usar un `ffmpeg` con libass** en el sistema.
+2. **Descargar un build estático** de `ffmpeg` con libass (por ejemplo desde
+   [evermeet.cx](https://evermeet.cx/ffmpeg/) en macOS) y apuntar la app a él con
+   `VSE_FFMPEG_BIN=/ruta/a/ffmpeg` (y opcionalmente
+   `VSE_FFPROBE_BIN=/ruta/a/ffprobe`).
+3. **Desbloqueo temporal:** arrancar con `VSE_SUBTITLES_FAILSOFT=1` para generar
+   el video **sin** subtítulos mientras resuelves lo anterior.
+
+**Binarios de ffmpeg/ffprobe configurables:**
+
+- `VSE_FFMPEG_BIN`: ejecutable de `ffmpeg` a usar. Puede ser un **nombre** en el
+  `PATH` (p. ej. `ffmpeg`) o una **ruta absoluta** (p. ej.
+  `/opt/ffmpeg/bin/ffmpeg`). Por defecto: `ffmpeg`.
+- `VSE_FFPROBE_BIN`: ejecutable de `ffprobe` a usar (nombre en el `PATH` o ruta
+  absoluta). Por defecto: `ffprobe`.
+
+La verificación de dependencias al arrancar comprueba el binario **configurado**:
+si es una ruta absoluta, verifica que exista y sea ejecutable; si es un nombre,
+lo busca en el `PATH`.
+
 ## Notas
 
 - No se establece ninguna conexión de red saliente hacia servicios externos ni

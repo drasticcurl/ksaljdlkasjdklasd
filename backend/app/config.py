@@ -22,6 +22,26 @@ BACKEND_PORT: int = 8000
 FRONTEND_PORT: int = 3000
 
 # ---------------------------------------------------------------------------
+# Binarios de ffmpeg / ffprobe (configurables por entorno)
+# ---------------------------------------------------------------------------
+# Ejecutables de ffmpeg y ffprobe que usará el Motor de Procesamiento. Se leen
+# en tiempo de import desde las variables de entorno ``VSE_FFMPEG_BIN`` y
+# ``VSE_FFPROBE_BIN``. El valor puede ser:
+#
+#   * un **nombre** que se resolverá en el ``PATH`` (p. ej. ``"ffmpeg"``), o
+#   * una **ruta absoluta** a un binario concreto (p. ej.
+#     ``"/opt/ffmpeg/bin/ffmpeg"``).
+#
+# Esto permite apuntar la app a un build estático de ffmpeg con ``libass`` sin
+# depender del ffmpeg del sistema (p. ej. cuando el ffmpeg de Homebrew no incluye
+# el filtro ``ass`` para quemar subtítulos). Los constructores de comando del
+# motor referencian ``config.FFMPEG_BIN`` / ``config.FFPROBE_BIN`` en tiempo de
+# construcción del comando (no capturan el valor en una constante local), de modo
+# que los tests que hacen monkeypatch de estos atributos vean el cambio.
+FFMPEG_BIN: str = os.environ.get("VSE_FFMPEG_BIN", "ffmpeg")
+FFPROBE_BIN: str = os.environ.get("VSE_FFPROBE_BIN", "ffprobe")
+
+# ---------------------------------------------------------------------------
 # Límites de tamaño (Req 1.4, 8.2)
 # ---------------------------------------------------------------------------
 MB: int = 1024 * 1024

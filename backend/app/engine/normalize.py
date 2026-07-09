@@ -33,6 +33,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Sequence
 
+from app import config
+
 # ---------------------------------------------------------------------------
 # Rango de dimensiones válidas (Req 3.2): cada eje es un entero entre 2 y 7680.
 # ---------------------------------------------------------------------------
@@ -386,7 +388,7 @@ def comando_normalizar_clip(
     Returns:
         La lista de argumentos del comando ffmpeg.
     """
-    args: List[str] = ["ffmpeg", "-y"]
+    args: List[str] = [config.FFMPEG_BIN, "-y"]
     if tiene_audio:
         args += ["-i", entrada]
         map_args = ["-map", "0:v:0", "-map", "0:a:0"]
@@ -436,7 +438,7 @@ def comando_concatenar(concat_txt: str, salida: str) -> List[str]:
         La lista de argumentos del comando ffmpeg.
     """
     return [
-        "ffmpeg",
+        config.FFMPEG_BIN,
         "-y",
         "-f",
         "concat",

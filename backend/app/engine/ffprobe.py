@@ -26,6 +26,7 @@ import json
 from dataclasses import dataclass
 from typing import List, Optional
 
+from app import config
 from app.engine.proc import Runner, ejecutar_comando
 
 
@@ -87,7 +88,7 @@ def construir_comando_ffprobe(ruta: str) -> List[str]:
         La lista de argumentos del comando ``ffprobe``.
     """
     return [
-        "ffprobe",
+        config.FFPROBE_BIN,
         "-v",
         "error",
         "-print_format",

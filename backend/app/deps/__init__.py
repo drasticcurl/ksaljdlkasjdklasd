@@ -12,6 +12,8 @@ from app.deps.checker import (
     DependenciasFaltantesError,
     ResultadoDependencia,
     ResultadoVerificacion,
+    comprobar_ejecutable,
+    filtro_ass_disponible,
     verificar_dependencias,
 )
 from app.deps.path_setup import (
@@ -29,6 +31,8 @@ __all__ = [
     "asegurar_confianza_auto_editor_macos",
     "asegurar_path_local",
     "asegurar_permisos_auto_editor",
+    "comprobar_ejecutable",
+    "filtro_ass_disponible",
     "preparar_auto_editor",
     "verificar_dependencias",
 ]

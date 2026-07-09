@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
+import re
 import shutil
 import subprocess
 import time
@@ -46,6 +48,7 @@ from typing import Callable, Dict, List, Mapping, Optional
 
 from app import config
 from app.deps.path_setup import asegurar_path_local
+from app.engine.proc import Runner, ejecutar_comando
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +161,31 @@ def comprobar_binario(comando: str) -> Comprobador:
     return _comprobar
 
 
+def comprobar_ejecutable(comando: str) -> Comprobador:
+    """Crea un comprobador para un binario que puede ser un nombre o una ruta.
+
+    A diferencia de :func:`comprobar_binario` (que siempre resuelve por ``PATH``),
+    este comprobador distingue el caso en que ``comando`` es una **ruta absoluta**
+    (p. ej. un build estático de ffmpeg apuntado con ``VSE_FFMPEG_BIN``):
+
+    * Si ``comando`` es una **ruta absoluta**, la dependencia se considera
+      disponible si el archivo **existe** y es **ejecutable**
+      (``os.path.isfile`` + ``os.access(..., os.X_OK)``).
+    * Si ``comando`` es un **nombre**, se localiza en el ``PATH`` con
+      :func:`shutil.which` (comportamiento idéntico a :func:`comprobar_binario`).
+
+    La comprobación es **instantánea** (no ejecuta el binario) y conserva la firma
+    :data:`Comprobador`.
+    """
+
+    def _comprobar(_timeout: float) -> bool:
+        if os.path.isabs(comando):
+            return os.path.isfile(comando) and os.access(comando, os.X_OK)
+        return shutil.which(comando) is not None
+
+    return _comprobar
+
+
 def comprobar_importable(modulo: str) -> Comprobador:
     """Crea un comprobador de importabilidad de un módulo Python.
 
@@ -175,8 +203,11 @@ def comprobar_importable(modulo: str) -> Comprobador:
 def _comprobadores_por_defecto() -> Dict[str, Comprobador]:
     """Devuelve el mapeo de comprobadores reales para producción."""
     return {
-        DEP_FFMPEG: comprobar_binario("ffmpeg"),
-        DEP_FFPROBE: comprobar_binario("ffprobe"),
+        # ffmpeg/ffprobe se comprueban contra el binario CONFIGURADO
+        # (``config.FFMPEG_BIN`` / ``config.FFPROBE_BIN``), que puede ser un
+        # nombre en el ``PATH`` o una ruta absoluta a un build concreto.
+        DEP_FFMPEG: comprobar_ejecutable(config.FFMPEG_BIN),
+        DEP_FFPROBE: comprobar_ejecutable(config.FFPROBE_BIN),
         DEP_AUTO_EDITOR: comprobar_binario("auto-editor"),
         # faster-whisper se importa como ``faster_whisper``.
         DEP_FASTER_WHISPER: comprobar_importable("faster_whisper"),
@@ -337,3 +368,56 @@ def _registrar_resumen(resultado: ResultadoVerificacion, timeout_total: float) -
         "Verificación de dependencias fallida: faltan %s",
         ", ".join(resultado.faltantes),
     )
+
+
+# ---------------------------------------------------------------------------
+# Comprobación del filtro `ass` (libass) en el ffmpeg configurado
+# ---------------------------------------------------------------------------
+# ``ffmpeg -filters`` lista una línea por filtro con el formato:
+#
+#     T.C ass              V->V       Render ASS subtitles ...
+#
+# es decir: columna de banderas, **nombre del filtro**, columna ``in->out`` y
+# descripción. Esta expresión captura el nombre de filtro (segunda columna) solo
+# en las líneas que tienen el patrón de conexión ``<algo>-><algo>``, evitando así
+# falsos positivos con la palabra "ass" dentro de una descripción.
+_RE_NOMBRE_FILTRO = re.compile(r"^\s*\S+\s+(\S+)\s+\S+->\S+")
+
+
+def filtro_ass_disponible(runner: Runner = ejecutar_comando) -> bool:
+    """Indica si el ffmpeg configurado incluye el filtro ``ass`` (libass).
+
+    Ejecuta ``[config.FFMPEG_BIN, "-hide_banner", "-filters"]`` a través del
+    ``runner`` inyectable y busca una línea cuyo **nombre de filtro** (segunda
+    columna) sea exactamente ``ass``. El filtro ``ass`` es el que ffmpeg usa para
+    quemar subtítulos y solo está disponible cuando ffmpeg se compiló con
+    ``libass``.
+
+    Es **tolerante a fallos**: si ffmpeg no se puede ejecutar (binario ausente,
+    error de E/S, cualquier excepción del ``runner``) devuelve ``False`` sin
+    propagar la excepción.
+
+    Args:
+        runner: Ejecutor de comandos inyectable (por defecto, subprocess real).
+
+    Returns:
+        ``True`` si el filtro ``ass`` está disponible; ``False`` en caso contrario
+        o si la comprobación no pudo completarse.
+    """
+    comando = [config.FFMPEG_BIN, "-hide_banner", "-filters"]
+    try:
+        resultado = runner(comando)
+    except Exception:  # noqa: BLE001 - tolerante a fallos por diseño
+        return False
+
+    if resultado is None:
+        return False
+
+    salida = (getattr(resultado, "stdout", "") or "") + "\n" + (
+        getattr(resultado, "stderr", "") or ""
+    )
+    for linea in salida.splitlines():
+        coincidencia = _RE_NOMBRE_FILTRO.match(linea)
+        if coincidencia is not None and coincidencia.group(1) == "ass":
+            return True
+    return False

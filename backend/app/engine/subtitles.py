@@ -28,6 +28,7 @@ import logging
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Union
 
+from app import config
 from app.engine.ass_builder import construir_ass
 from app.engine.grouping import agrupar
 from app.engine.proc import Runner, ejecutar_comando
@@ -171,7 +172,7 @@ def comando_quemar_subtitulos(entrada: str, ass_path: str, salida: str) -> List[
         La lista de argumentos del comando ffmpeg.
     """
     return [
-        "ffmpeg",
+        config.FFMPEG_BIN,
         "-y",
         "-i",
         entrada,

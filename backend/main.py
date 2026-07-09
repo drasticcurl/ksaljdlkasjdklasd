@@ -58,7 +58,11 @@ from app.api import download as download_router  # noqa: E402
 from app.api import music as music_router  # noqa: E402
 from app.api import process as process_router  # noqa: E402
 from app.api import progress as progress_router  # noqa: E402
-from app.deps import DependenciasFaltantesError, verificar_dependencias  # noqa: E402
+from app.deps import (  # noqa: E402
+    DependenciasFaltantesError,
+    filtro_ass_disponible,
+    verificar_dependencias,
+)
 
 # Configura el logging al importar el módulo. Solo si aún no hay handlers en el
 # root logger, para no duplicar la configuración cuando se ejecuta bajo uvicorn
@@ -124,6 +128,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # Req 12.4: impedir que el Backend complete su arranque.
         raise DependenciasFaltantesError(faltantes)
     logger.info("Todas las dependencias están disponibles; el Backend inicia.")
+
+    # Aviso NO fatal si el ffmpeg configurado no incluye el filtro `ass`
+    # (libass): sin él no se pueden quemar subtítulos. No se bloquea el arranque
+    # (los subtítulos tienen su propio manejo/failsoft, Req 10.7).
+    if not filtro_ass_disponible():
+        logger.warning(
+            "El ffmpeg configurado no incluye el filtro 'ass' (libass); no se "
+            "podrán quemar subtítulos. Usa un ffmpeg con libass (p. ej. un build "
+            "estático) y apúntalo con VSE_FFMPEG_BIN, o arranca con "
+            "VSE_SUBTITLES_FAILSOFT=1 para generar el video sin subtítulos."
+        )
+
     yield
 
 
