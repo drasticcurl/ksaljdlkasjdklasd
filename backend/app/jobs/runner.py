@@ -28,6 +28,7 @@ from app.engine.pipeline import (
     ReporteProgreso,
     ResultadoPipeline,
     ejecutar_pipeline,
+    reanudar_pipeline,
 )
 from app.engine.proc import Runner, ejecutar_comando
 from app.jobs.manager import JobManager
@@ -135,6 +136,9 @@ class JobRunner:
         orden_rutas = [self.resolver_clip(cid) for cid in job_state.orden_clips]
 
         resultado: ResultadoPipeline
+        # Cuando el pipeline se pausa para la revisión manual de subtítulos NO se
+        # limpia el workdir (los intermedios se necesitan al reanudar la fase 2).
+        limpiar = True
         try:
             resultado = ejecutar_pipeline(
                 job_wd,
@@ -145,6 +149,16 @@ class JobRunner:
                 runner=self.runner,
                 **self._inyecciones,
             )
+            if resultado.pendiente_revision:
+                # Pausa por revisión manual: guardar grupos + video cortado y
+                # dejar el Job a la espera SIN limpiar los temporales.
+                self.manager.marcar_esperando_revision(
+                    job_id,
+                    str(resultado.cortado) if resultado.cortado is not None else "",
+                    resultado.grupos,
+                )
+                limpiar = False
+                return resultado
             if resultado.exito:
                 self.manager.marcar_completado(
                     job_id,
@@ -166,13 +180,84 @@ class JobRunner:
             self.manager.marcar_fallido(job_id, "PIPELINE", str(exc))
             resultado = ResultadoPipeline(exito=False, motivo=str(exc))
         finally:
-            # Limpieza de temporales en toda terminación (Req 13.4, 13.5).
+            # Limpieza de temporales en toda terminación (Req 13.4, 13.5), salvo
+            # cuando el Job quedó a la espera de la revisión manual.
+            if limpiar:
+                try:
+                    job_wd.cleanup()
+                except Exception:  # noqa: BLE001 - la limpieza no debe propagar
+                    logger.exception(
+                        "Fallo al limpiar el workdir del Job %s", job_id
+                    )
+
+        return resultado
+
+    def reanudar_job(self, job_id: str, grupos: Any) -> ResultadoPipeline:
+        """Reanuda la **fase 2** de un Job pausado en la revisión de subtítulos.
+
+        Toma los ``grupos`` de subtítulo (ya editados por el usuario) y ejecuta
+        :func:`reanudar_pipeline` sobre el video ``cortado`` guardado durante la
+        pausa: quema los subtítulos, mezcla música (si la hay) y conserva el
+        ``Video_Final``. Al terminar —éxito o error— limpia el workdir.
+
+        Args:
+            job_id: Identificador del Job pausado en ``ESPERANDO_REVISION``.
+            grupos: Grupos de subtítulo editados a aplicar.
+
+        Returns:
+            El :class:`ResultadoPipeline` de la fase 2.
+
+        Raises:
+            KeyError: Si el Job no existe en el Gestor.
+        """
+        job_state = self.manager.obtener(job_id)
+        if job_state is None:
+            raise KeyError(f"Job inexistente: {job_id!r}")
+
+        # Volver a EN_EJECUCION (desde ESPERANDO_REVISION) para la fase 2.
+        self.manager.marcar_en_ejecucion(job_id)
+        job_wd = JobWorkdir(job_id)
+        reporter = self._crear_reporter(job_id)
+        musica_wav = self.resolver_musica(job_state.musica_id)
+        cortado = job_state.cortado_path or ""
+
+        resultado: ResultadoPipeline
+        try:
+            resultado = reanudar_pipeline(
+                job_wd,
+                cortado,
+                job_state.ajustes,
+                palabras=[],
+                grupos=grupos,
+                musica_wav=musica_wav,
+                reporter=reporter,
+                runner=self.runner,
+                **self._inyecciones,
+            )
+            if resultado.exito:
+                self.manager.marcar_completado(
+                    job_id,
+                    ruta_video_final=(
+                        str(resultado.ruta_video_final)
+                        if resultado.ruta_video_final is not None
+                        else None
+                    ),
+                )
+            else:
+                self.manager.marcar_fallido(
+                    job_id,
+                    resultado.paso_fallido,
+                    resultado.motivo or "fallo del pipeline",
+                )
+        except Exception as exc:  # noqa: BLE001 - fallo inesperado => Job fallido
+            logger.exception("Fallo inesperado al reanudar el Job %s", job_id)
+            self.manager.marcar_fallido(job_id, "PIPELINE", str(exc))
+            resultado = ResultadoPipeline(exito=False, motivo=str(exc))
+        finally:
             try:
                 job_wd.cleanup()
             except Exception:  # noqa: BLE001 - la limpieza no debe propagar
-                logger.exception(
-                    "Fallo al limpiar el workdir del Job %s", job_id
-                )
+                logger.exception("Fallo al limpiar el workdir del Job %s", job_id)
 
         return resultado
 
@@ -188,6 +273,19 @@ class JobRunner:
         """
         loop = asyncio.get_event_loop()
         return loop.run_in_executor(None, self.ejecutar_job, job_id)
+
+    async def lanzar_reanudacion(self, job_id: str, grupos: Any) -> asyncio.Future:
+        """Lanza la reanudación (fase 2) de un Job en background sin bloquear.
+
+        Programa :meth:`reanudar_job` en el executor por defecto y devuelve el
+        ``Future`` de inmediato, de modo que ``POST /subtitulos/{id}`` pueda
+        responder rápidamente mientras se quema/mezcla en segundo plano.
+
+        Returns:
+            El ``Future`` de la ejecución en background (no se espera aquí).
+        """
+        loop = asyncio.get_event_loop()
+        return loop.run_in_executor(None, self.reanudar_job, job_id, grupos)
 
 
 __all__ = ["JobRunner", "ResolverMusica", "ResolverClip"]

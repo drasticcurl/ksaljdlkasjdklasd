@@ -31,12 +31,19 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
     umbral_db: -30,
     margen_ms: 200,
   },
+  // Transiciones: por defecto SIN transición (corte duro), como hasta ahora.
+  transiciones: {
+    tipo: 'ninguna',
+    duracion_ms: 400,
+  },
   transcripcion: {
     idioma: 'es',
     modelo: 'small',
   },
   subtitulos: {
     max_palabras: 4,
+    // Revisión manual desactivada por defecto (el pipeline corre completo).
+    revisar: false,
     // Texto en minúscula desactivado por defecto (se conserva la transcripción).
     minusculas: false,
     posicion_vertical: 'inferior',

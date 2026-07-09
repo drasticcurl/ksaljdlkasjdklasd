@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.settings import Ajustes
+from app.models.settings import Ajustes, GrupoSubtitulo
 
 
 class JobStatus(str, Enum):
@@ -22,6 +22,9 @@ class JobStatus(str, Enum):
 
     EN_COLA = "en_cola"
     EN_EJECUCION = "en_ejecucion"
+    # Estado NO terminal: el pipeline se pausó tras la transcripción y espera que
+    # el usuario revise/edite los subtítulos antes de continuar (revisión manual).
+    ESPERANDO_REVISION = "esperando_revision"
     COMPLETADO = "completado"
     FALLIDO = "fallido"
 
@@ -78,5 +81,12 @@ class JobState(BaseModel):
     workdir: str = Field(..., description="Directorio de trabajo del Job (Req 13.3)")
     ruta_video_final: Optional[str] = Field(default=None)
     progreso: Progress = Field(default_factory=Progress)
+    # Estado de la revisión manual de subtítulos (solo se rellena cuando el Job
+    # se pausa en ESPERANDO_REVISION):
+    #   - ``grupos_subtitulos``: grupos de subtítulo propuestos para editar.
+    #   - ``cortado_path``: ruta del video (ya cortado) sobre el que se quemarán
+    #     los subtítulos al reanudar la fase 2 del pipeline.
+    grupos_subtitulos: Optional[List[GrupoSubtitulo]] = Field(default=None)
+    cortado_path: Optional[str] = Field(default=None)
     creado_en: datetime = Field(default_factory=_ahora)
     actualizado_en: datetime = Field(default_factory=_ahora)

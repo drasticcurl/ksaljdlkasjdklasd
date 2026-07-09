@@ -98,6 +98,29 @@ OUTPUT_ROOT: Path = Path(
 # Nombre del artefacto final por Job.
 FINAL_VIDEO_FILENAME: str = "final.mp4"
 
+# ---------------------------------------------------------------------------
+# Configuración persistente del usuario (ajustes por defecto) — JSON local
+# ---------------------------------------------------------------------------
+# Directorio donde se guarda la configuración por defecto del usuario, de modo
+# que la Interfaz pueda "Guardar como predeterminado" y recuperarla al abrir.
+# Es un archivo JSON local en la máquina del usuario (operación 100% local).
+# Configurable con la variable de entorno ``VSE_CONFIG_DIR``.
+USER_CONFIG_ROOT: Path = Path(
+    os.environ.get("VSE_CONFIG_DIR", str(BACKEND_ROOT / ".config"))
+).resolve()
+
+# Nombre del archivo JSON de ajustes por defecto del usuario.
+USER_CONFIG_FILENAME: str = "ajustes.json"
+
+
+def user_config_path() -> Path:
+    """Devuelve la ruta del JSON de ajustes por defecto del usuario.
+
+    Se resuelve en tiempo de llamada (no como constante) para que las pruebas
+    puedan redirigir ``USER_CONFIG_ROOT`` mediante monkeypatch.
+    """
+    return USER_CONFIG_ROOT / USER_CONFIG_FILENAME
+
 
 def job_workdir(job_id: str) -> Path:
     """Devuelve el directorio de trabajo temporal de un Job (`<WORKDIR>/jobs/{job_id}`)."""
@@ -140,6 +163,20 @@ SILENCE_ENGINE: str = os.environ.get("VSE_SILENCE_ENGINE", "ffmpeg").strip() or 
 # Duración mínima (en segundos) de un silencio para que ffmpeg ``silencedetect``
 # lo considere; también es el valor por defecto de ``d=`` del filtro.
 DEFAULT_MIN_SILENCIO_S: float = 0.5
+
+# Transiciones entre clips (Paso 1, UNIR). Por defecto SIN transición (corte
+# duro), para preservar el comportamiento previo y no forzar recodificación.
+# Cuando se activa, se aplica el MISMO efecto entre todos los clips con una
+# duración configurable (ms).
+DEFAULT_TRANSICION_TIPO: str = "ninguna"
+DEFAULT_TRANSICION_DURACION_MS: int = 400
+TRANSICION_DURACION_MS_MIN: int = 100
+TRANSICION_DURACION_MS_MAX: int = 2000
+
+# Revisión manual de subtítulos: si está activada, el pipeline se pausa tras la
+# transcripción para que el usuario edite el texto antes de quemarlos. Por
+# defecto desactivada (el pipeline corre de principio a fin sin intervención).
+DEFAULT_SUBTITULOS_REVISAR: bool = False
 
 # Transcripción (Req 5.2, 5.3).
 DEFAULT_IDIOMA: str = "es"

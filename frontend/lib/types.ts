@@ -76,6 +76,22 @@ export interface AjustesSilencios {
   margen_ms: number;
 }
 
+/** Tipo de transición entre clips (Paso 1, UNIR). */
+export type TipoTransicion =
+  | 'ninguna'
+  | 'disolucion'
+  | 'fundido_negro'
+  | 'deslizar_izq'
+  | 'deslizar_arriba';
+
+/** Ajustes de la transición entre clips (mismo efecto entre todos los clips). */
+export interface AjustesTransiciones {
+  /** Tipo de transición; `ninguna` es el corte duro (sin recodificar). */
+  tipo: TipoTransicion;
+  /** Duración del efecto en ms: 100..2000, def 400. */
+  duracion_ms: number;
+}
+
 /** Ajustes de transcripción (Req 5, 9.3). */
 export interface AjustesTranscripcion {
   /** Idioma soportado por faster-whisper, o "auto" para detección. Def "es". */
@@ -88,6 +104,8 @@ export interface AjustesTranscripcion {
 export interface AjustesSubtitulos {
   /** Máximo de palabras por grupo: UI 1..20 / motor 1..10, def 4. */
   max_palabras: number;
+  /** Si es `true`, el pipeline se pausa tras transcribir para revisar el texto. */
+  revisar: boolean;
   /** Si es `true`, todo el texto de los subtítulos se muestra en minúscula. */
   minusculas: boolean;
   posicion_vertical: PosicionVertical;
@@ -134,6 +152,7 @@ export interface AjustesMusica {
 export interface Ajustes {
   generales: AjustesGenerales;
   silencios: AjustesSilencios;
+  transiciones: AjustesTransiciones;
   transcripcion: AjustesTranscripcion;
   subtitulos: AjustesSubtitulos;
   /** Música opcional: `null` si no se agregó WAV (el paso 5 se omite). */
@@ -171,8 +190,29 @@ export interface ProcesarResponse {
 export type JobStatus =
   | 'en_cola'
   | 'en_ejecucion'
+  | 'esperando_revision'
   | 'completado'
   | 'fallido';
+
+/** Un grupo de subtítulo (línea) con su texto y tiempos (revisión manual). */
+export interface GrupoSubtitulo {
+  texto: string;
+  inicio_s: number;
+  fin_s: number;
+}
+
+/** Respuesta de `GET /subtitulos/{id}`. */
+export interface SubtitulosRevision {
+  job_id: string;
+  estado: JobStatus;
+  editable: boolean;
+  grupos: GrupoSubtitulo[];
+}
+
+/** Respuesta de `GET`/`PUT` `/configuracion`. */
+export interface ConfiguracionResponse {
+  ajustes: Ajustes | null;
+}
 
 /** Pasos del pipeline, en orden estricto. */
 export type PipelineStep =

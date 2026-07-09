@@ -101,6 +101,11 @@ const CAMPOS_NUMERICOS: ReadonlyArray<{
     leer: (a) => a.silencios.margen_ms,
   },
   {
+    campo: 'transiciones.duracion_ms',
+    etiqueta: 'Duración de la transición',
+    leer: (a) => a.transiciones.duracion_ms,
+  },
+  {
     campo: 'subtitulos.pos_vertical_pct',
     etiqueta: 'Posición vertical del subtítulo',
     leer: (a) => a.subtitulos.pos_vertical_pct,

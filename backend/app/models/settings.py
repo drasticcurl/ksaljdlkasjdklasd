@@ -34,6 +34,16 @@ from app import config
 PosicionVertical = Literal["superior", "centro", "inferior"]
 PosicionHorizontal = Literal["izquierda", "centro", "derecha"]
 
+# Tipos de transición entre clips (Paso 1, UNIR). ``ninguna`` es el corte duro
+# actual; el resto se implementa con el filtro ``xfade``/``acrossfade`` de ffmpeg.
+TipoTransicion = Literal[
+    "ninguna",
+    "disolucion",
+    "fundido_negro",
+    "deslizar_izq",
+    "deslizar_arriba",
+]
+
 
 class ResolucionObjetivo(BaseModel):
     """Resolución vertical de salida (Req 3.2). Rangos validados en la tarea 8."""
@@ -61,6 +71,19 @@ class AjustesSilencios(BaseModel):
     margen_ms: int = Field(default=config.DEFAULT_SILENCIO_MARGEN_MS)
 
 
+class AjustesTransiciones(BaseModel):
+    """Ajustes de la transición entre clips (Paso 1, UNIR).
+
+    Se aplica el **mismo** efecto entre todos los clips consecutivos. ``tipo``
+    ``"ninguna"`` mantiene el corte duro (sin recodificar en la unión); cualquier
+    otro tipo activa el motor ``xfade``/``acrossfade`` de ffmpeg con una duración
+    de ``duracion_ms`` milisegundos (rango del motor validado en la tarea 8).
+    """
+
+    tipo: TipoTransicion = Field(default=config.DEFAULT_TRANSICION_TIPO)
+    duracion_ms: int = Field(default=config.DEFAULT_TRANSICION_DURACION_MS)
+
+
 class AjustesTranscripcion(BaseModel):
     """Ajustes de transcripción (Req 5, 9.3).
 
@@ -79,6 +102,9 @@ class AjustesSubtitulos(BaseModel):
     """
 
     max_palabras: int = Field(default=config.DEFAULT_MAX_PALABRAS)
+    # Si está activado, el pipeline se pausa tras la transcripción para que el
+    # usuario revise/edite el texto de los subtítulos antes de quemarlos.
+    revisar: bool = Field(default=config.DEFAULT_SUBTITULOS_REVISAR)
     # Si está activado, todo el texto de los subtítulos se muestra en minúscula.
     minusculas: bool = Field(default=config.DEFAULT_SUBTITULOS_MINUSCULAS)
     posicion_vertical: PosicionVertical = Field(default="inferior")
@@ -115,6 +141,7 @@ class Ajustes(BaseModel):
 
     generales: AjustesGenerales = Field(default_factory=AjustesGenerales)
     silencios: AjustesSilencios = Field(default_factory=AjustesSilencios)
+    transiciones: AjustesTransiciones = Field(default_factory=AjustesTransiciones)
     transcripcion: AjustesTranscripcion = Field(default_factory=AjustesTranscripcion)
     subtitulos: AjustesSubtitulos = Field(default_factory=AjustesSubtitulos)
     musica: Optional[AjustesMusica] = Field(default=None)
@@ -234,6 +261,12 @@ RANGOS_MOTOR: Dict[str, Tuple[float, float]] = {
     #   umbral -60..0 dB, margen 0..5000 ms (Req 9.2, 4.4).
     "silencios.umbral_db": (-60.0, 0.0),
     "silencios.margen_ms": (0, 5000),
+    # Transiciones — duración del efecto entre clips (ms). El tipo se valida por
+    # el Literal ``TipoTransicion``; solo la duración tiene rango numérico.
+    "transiciones.duracion_ms": (
+        config.TRANSICION_DURACION_MS_MIN,
+        config.TRANSICION_DURACION_MS_MAX,
+    ),
     # Subtítulos — rangos del motor (Req 7.x); más estrictos que la UI (Req 9.1).
     "subtitulos.pos_vertical_pct": (0.0, 100.0),   # 0..100 % de la altura (Req 9.1)
     "subtitulos.pos_horizontal_pct": (0.0, 100.0),  # 0..100 % del ancho (Req 9.1)
@@ -351,6 +384,8 @@ __all__: List[str] = [
     "ResolucionObjetivo",
     "AjustesGenerales",
     "AjustesSilencios",
+    "AjustesTransiciones",
+    "TipoTransicion",
     "AjustesTranscripcion",
     "AjustesSubtitulos",
     "AjustesMusica",

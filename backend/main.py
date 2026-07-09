@@ -58,6 +58,8 @@ from app.api import download as download_router  # noqa: E402
 from app.api import music as music_router  # noqa: E402
 from app.api import process as process_router  # noqa: E402
 from app.api import progress as progress_router  # noqa: E402
+from app.api import settings_config as settings_config_router  # noqa: E402
+from app.api import subtitles as subtitles_router  # noqa: E402
 from app.deps import DependenciasFaltantesError, verificar_dependencias  # noqa: E402
 
 # Configura el logging al importar el módulo. Solo si aún no hay handlers en el
@@ -189,6 +191,11 @@ app.include_router(music_router.router)
 app.include_router(process_router.router)
 app.include_router(progress_router.router)
 app.include_router(download_router.router)
+
+# Endpoints nuevos: revisión manual de subtítulos y configuración por defecto
+# del usuario (persistencia local en JSON).
+app.include_router(subtitles_router.router)
+app.include_router(settings_config_router.router)
 
 
 @app.get("/salud")
