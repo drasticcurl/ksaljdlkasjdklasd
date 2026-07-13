@@ -351,7 +351,13 @@ def ejecutar_pipeline(
     # (tras la transcripción): agrupa las palabras y devuelve los grupos para que
     # se editen. La fase 2 (quemar subtítulos + música) se ejecuta al reanudar
     # con :func:`reanudar_pipeline`.
-    if ajustes.subtitulos.revisar:
+    #
+    # EXCEPCIÓN: si la corrección con IA está activada (``revision_ia.activado``),
+    # la revisión manual se OMITE aunque ``revisar`` esté activo. En ese caso el
+    # flujo se automatiza: la IA corrige los grupos y el pipeline continúa
+    # directamente a ``preparar_grupos_y_pausar`` (que aplica la corrección IA y
+    # pausa en la elección del motor de render), sin la pausa de edición manual.
+    if ajustes.subtitulos.revisar and not ajustes.revision_ia.activado:
         grupos_revision = agrupar(palabras, ajustes.subtitulos.max_palabras)
         logger.info(
             "Pipeline en pausa para revisión manual de subtítulos (%d grupos)",

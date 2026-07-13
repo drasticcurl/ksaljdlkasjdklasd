@@ -31,6 +31,12 @@ import type { PresetSubtitulo } from '@/lib/types';
 export interface SubtitleSettingsProps {
   valor: AjustesSubtitulos;
   onChange: (valor: AjustesSubtitulos) => void;
+  /**
+   * Si la corrección con IA está activada, el backend omite la pausa de
+   * revisión manual. En ese caso se oculta el toggle "revisar" y se muestra una
+   * nota informativa (Req: ocultar revisión manual cuando la IA está activada).
+   */
+  iaActivada?: boolean;
 }
 
 const POSICIONES_VERTICALES: PosicionVertical[] = [
@@ -83,6 +89,7 @@ function CampoColor({
 export default function SubtitleSettings({
   valor,
   onChange,
+  iaActivada = false,
 }: SubtitleSettingsProps) {
   return (
     <fieldset
@@ -269,15 +276,27 @@ export default function SubtitleSettings({
         <span>Todo el texto en minúscula</span>
       </label>
 
-      <label className="flex items-center gap-2 text-sm text-gray-300">
-        <input
-          type="checkbox"
-          checked={valor.revisar}
-          data-testid="campo-subtitulos.revisar"
-          onChange={(e) => onChange({ ...valor, revisar: e.target.checked })}
-        />
-        <span>Revisar y editar el texto antes de quemar los subtítulos</span>
-      </label>
+      {/* La revisión manual solo tiene sentido si la IA está desactivada: el
+          backend omite esa pausa cuando `revision_ia.activado` es true. */}
+      {iaActivada ? (
+        <p
+          data-testid="revisar-ia-nota"
+          className="text-xs text-gray-400"
+        >
+          La revisión manual se omite: la IA corrige automáticamente los
+          subtítulos.
+        </p>
+      ) : (
+        <label className="flex items-center gap-2 text-sm text-gray-300">
+          <input
+            type="checkbox"
+            checked={valor.revisar}
+            data-testid="campo-subtitulos.revisar"
+            onChange={(e) => onChange({ ...valor, revisar: e.target.checked })}
+          />
+          <span>Revisar y editar el texto antes de quemar los subtítulos</span>
+        </label>
+      )}
 
       <NumberField
         etiqueta="Animación de entrada"

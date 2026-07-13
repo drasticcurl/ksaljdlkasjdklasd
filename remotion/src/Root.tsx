@@ -15,13 +15,13 @@ import type {ShortVideoProps} from './types';
 export const SHORT_VIDEO_ID = 'ShortVideo';
 
 // Props por defecto para el Studio (se sobreescriben con los inputProps reales).
+// videoSrc: '' => fondo blanco (playground); grupos: [] => sin subtitulos.
 const defaultProps: ShortVideoProps = {
   videoSrc: '',
   fps: 30,
   width: 1080,
   height: 1920,
   durationInFrames: 30,
-  captions: [],
   estilo: {
     fuente: 'Inter',
     tamano: 72,
@@ -31,6 +31,7 @@ const defaultProps: ShortVideoProps = {
     animEntradaMs: 150,
   },
   combineTokensWithinMs: 1200,
+  grupos: [],
 };
 
 // Deriva fps/durationInFrames/width/height desde los inputProps (Req 9.1).

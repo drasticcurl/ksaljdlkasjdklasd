@@ -1,3 +1,10 @@
+// COPIA para el navegador de remotion/src/ShortVideo.tsx.
+//
+// IMPORTANTE: mantener EN SINCRONÍA con `remotion/src/ShortVideo.tsx` del
+// subproyecto Node. Se duplica aquí para que @remotion/player pueda renderizar
+// la misma composición dentro del navegador (React + hooks de `remotion`). La
+// lógica debe ser IDÉNTICA a la del subproyecto.
+//
 // Composicion ShortVideo: fondo (video o blanco) + capa de subtitulos por grupo.
 //
 // Fondo:

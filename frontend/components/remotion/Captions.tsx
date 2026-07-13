@@ -1,3 +1,10 @@
+// COPIA para el navegador de remotion/src/Captions.tsx.
+//
+// IMPORTANTE: mantener EN SINCRONÍA con `remotion/src/Captions.tsx` del
+// subproyecto Node. Se duplica aquí para que @remotion/player pueda renderizar
+// la misma composición dentro del navegador (React + hooks de `remotion`). La
+// lógica debe ser IDÉNTICA a la del subproyecto.
+//
 // Capa de subtitulos estilo caption clasico + karaoke, renderizada POR GRUPO.
 //
 // Objetivo visual: una frase (grupo) a la vez, con las palabras SEPARADAS por
