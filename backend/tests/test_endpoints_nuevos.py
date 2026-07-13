@@ -129,7 +129,26 @@ def test_post_subtitulos_rechaza_conteo_distinto() -> None:
         assert resp.json()["error"]["code"] == "INVALID_REQUEST"
 
 
-def test_post_subtitulos_reanuda_y_completa(tmp_path: Path, monkeypatch) -> None:
+def _esperar_estado(manager: JobManager, job_id: str, objetivos, timeout: float = 5.0):
+    """Espera (con polling) hasta que el Job alcance uno de los estados objetivo."""
+    fin = time.monotonic() + timeout
+    while time.monotonic() < fin:
+        estado = manager.obtener(job_id).progreso.estado
+        if estado in objetivos:
+            return estado
+        time.sleep(0.05)
+    return manager.obtener(job_id).progreso.estado
+
+
+def test_post_subtitulos_reanuda_a_eleccion_render(tmp_path: Path, monkeypatch) -> None:
+    """Tras enviar los subtítulos editados, el Job se pausa para elegir motor y,
+    al elegir uno vía ``POST /render/{id}``, se renderiza hasta completar.
+
+    Refleja el nuevo flujo (spec subtitulos-ia-remotion, tarea 8.2): la revisión
+    manual ya NO renderiza directamente, sino que prepara los grupos finales y
+    pausa en ``ESPERANDO_ELECCION_RENDER``; el render efectivo lo dispara el
+    endpoint de elección de motor (tarea 8.1).
+    """
     monkeypatch.setattr(config, "WORKDIR_ROOT", tmp_path / "wk")
     monkeypatch.setattr(config, "OUTPUT_ROOT", tmp_path / "out")
     manager = JobManager()
@@ -142,14 +161,33 @@ def test_post_subtitulos_reanuda_y_completa(tmp_path: Path, monkeypatch) -> None
         assert resp.status_code == 202, resp.text
         assert resp.json()["estado"] == "en_ejecucion"
 
-    # La reanudación corre en background: esperar a que alcance un estado terminal.
-    fin = time.monotonic() + 5.0
-    while time.monotonic() < fin:
-        estado = manager.obtener("job-rev3").progreso.estado
-        if estado in (JobStatus.COMPLETADO, JobStatus.FALLIDO):
-            break
-        time.sleep(0.05)
-    assert manager.obtener("job-rev3").progreso.estado == JobStatus.COMPLETADO
+        # La preparación corre en background: el Job debe pausarse esperando la
+        # elección del motor (no completar directamente).
+        estado = _esperar_estado(
+            manager,
+            "job-rev3",
+            (JobStatus.ESPERANDO_ELECCION_RENDER, JobStatus.FALLIDO),
+        )
+        assert estado == JobStatus.ESPERANDO_ELECCION_RENDER
+
+        # GET /render devuelve los grupos finales corregidos (solo lectura).
+        resp = client.get("/render/job-rev3")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["estado"] == "esperando_eleccion_render"
+        assert body["editable"] is True
+        assert [g["texto"] for g in body["grupos"]] == ["Hola Mundo", "Segundo Grupo"]
+
+        # POST /render con el motor elegido reanuda el render en background.
+        resp = client.post("/render/job-rev3", json={"motor": "ass"})
+        assert resp.status_code == 202, resp.text
+        assert resp.json()["estado"] == "en_ejecucion"
+
+    # El render corre en background: esperar a que alcance un estado terminal.
+    estado = _esperar_estado(
+        manager, "job-rev3", (JobStatus.COMPLETADO, JobStatus.FALLIDO)
+    )
+    assert estado == JobStatus.COMPLETADO
 
 
 # ---------------------------------------------------------------------------

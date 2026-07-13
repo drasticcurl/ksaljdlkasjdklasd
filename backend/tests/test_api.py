@@ -37,6 +37,7 @@ from app import config
 from app.engine.pipeline import (
     ORDEN_PASOS,
     ejecutar_pipeline,
+    reanudar_pipeline,
 )
 from app.engine.silence import SilenceProcessingError
 from app.jobs.manager import JobManager
@@ -263,6 +264,23 @@ def test_propiedad_23_fallo_detiene_pipeline(
             reporter=reporter,
             **fakes,
         )
+        # Los pasos SUBTITULOS (3) y MUSICA (4) se ejecutan en la FASE 2
+        # (``reanudar_pipeline``) tras la pausa de elección de motor (spec
+        # subtitulos-ia-remotion, tarea 8.2). Cuando el fallo inyectado es
+        # posterior a la pausa, se continúa el flujo con el render (motor "ass")
+        # para que el fallo del paso correspondiente ocurra igualmente y se
+        # verifique el fail-stop del pipeline completo (Req 10.7).
+        if resultado.pendiente_eleccion_render:
+            resultado = reanudar_pipeline(
+                job_wd,
+                resultado.cortado,
+                ajustes,
+                grupos=resultado.grupos,
+                motor="ass",
+                musica_wav="musica.wav",
+                reporter=reporter,
+                **fakes,
+            )
 
         paso_fallido = ORDEN_PASOS[fallo_en]
         pasos_esperados = [p.value for p in ORDEN_PASOS[: fallo_en + 1]]
@@ -358,13 +376,21 @@ def test_pipeline_exito_llega_a_100() -> None:
         recorder: List[str] = []
         fakes = _construir_fakes(recorder=recorder, fallo_en=None)
         job_wd = JobWorkdir("job-ok")
-        resultado = ejecutar_pipeline(
-            job_wd, ["a", "b"], _ajustes_con_musica(),
+        ajustes = _ajustes_con_musica()
+        # Fase 1: prepara grupos y pausa para elegir motor (spec
+        # subtitulos-ia-remotion, tarea 8.2).
+        r1 = ejecutar_pipeline(
+            job_wd, ["a", "b"], ajustes, musica_wav="musica.wav", **fakes,
+        )
+        assert r1.pendiente_eleccion_render is True
+        # Fase 2: render con el motor elegido ("ass") hasta completar al 100 %.
+        resultado = reanudar_pipeline(
+            job_wd, r1.cortado, ajustes, grupos=r1.grupos, motor="ass",
             musica_wav="musica.wav", **fakes,
         )
         assert resultado.exito is True
         assert resultado.ruta_video_final == job_wd.output_path
-        # Los cinco pasos se ejecutaron en orden.
+        # Los cinco pasos se ejecutaron en orden (fase 1 + fase 2).
         assert recorder == [p.value for p in ORDEN_PASOS]
 
 
@@ -374,8 +400,14 @@ def test_pipeline_omite_musica_sin_wav() -> None:
         recorder: List[str] = []
         fakes = _construir_fakes(recorder=recorder, fallo_en=None)
         job_wd = JobWorkdir("job-nomus")
-        resultado = ejecutar_pipeline(
-            job_wd, ["a"], _ajustes_con_musica(), musica_wav=None, **fakes,
+        ajustes = _ajustes_con_musica()
+        r1 = ejecutar_pipeline(
+            job_wd, ["a"], ajustes, musica_wav=None, **fakes,
+        )
+        assert r1.pendiente_eleccion_render is True
+        resultado = reanudar_pipeline(
+            job_wd, r1.cortado, ajustes, grupos=r1.grupos, motor="ass",
+            musica_wav=None, **fakes,
         )
         assert resultado.exito is True
         assert PipelineStep.MUSICA.value not in recorder
@@ -410,9 +442,17 @@ def test_failsoft_activo_continua_sin_recortar(monkeypatch) -> None:
         recorder: List[str] = []
         fakes = _fakes_con_cortar_que_falla(recorder)
         job_wd = JobWorkdir("job-failsoft-on")
+        ajustes = _ajustes_con_musica()
 
-        resultado = ejecutar_pipeline(
-            job_wd, ["a", "b"], _ajustes_con_musica(),
+        # Fase 1: el corte de silencios falla pero el fail-soft continúa; tras la
+        # transcripción el pipeline se pausa para elegir motor (tarea 8.2).
+        r1 = ejecutar_pipeline(
+            job_wd, ["a", "b"], ajustes, musica_wav="musica.wav", **fakes,
+        )
+        assert r1.pendiente_eleccion_render is True
+        # Fase 2: render con motor "ass" hasta completar.
+        resultado = reanudar_pipeline(
+            job_wd, r1.cortado, ajustes, grupos=r1.grupos, motor="ass",
             musica_wav="musica.wav", **fakes,
         )
 
@@ -471,8 +511,13 @@ def test_pipeline_omite_musica_sin_ajustes() -> None:
         fakes = _construir_fakes(recorder=recorder, fallo_en=None)
         job_wd = JobWorkdir("job-nomus2")
         ajustes = Ajustes(musica=None)
-        resultado = ejecutar_pipeline(
+        r1 = ejecutar_pipeline(
             job_wd, ["a"], ajustes, musica_wav="musica.wav", **fakes,
+        )
+        assert r1.pendiente_eleccion_render is True
+        resultado = reanudar_pipeline(
+            job_wd, r1.cortado, ajustes, grupos=r1.grupos, motor="ass",
+            musica_wav="musica.wav", **fakes,
         )
         assert resultado.exito is True
         assert PipelineStep.MUSICA.value not in recorder
@@ -489,8 +534,19 @@ def test_runner_ejecuta_y_limpia_en_exito() -> None:
         fakes = _construir_fakes(recorder=[], fallo_en=None)
         runner = JobRunner(manager, **fakes)
 
+        # Fase 1: el runner ejecuta hasta la pausa de elección de motor (spec
+        # subtitulos-ia-remotion, tarea 8.2) y NO limpia el workdir (se necesita
+        # para el render posterior).
         resultado = runner.ejecutar_job("job-run")
+        assert resultado.pendiente_eleccion_render is True
+        assert (
+            manager.obtener("job-run").progreso.estado
+            == JobStatus.ESPERANDO_ELECCION_RENDER
+        )
+        assert JobWorkdir("job-run").root.exists()
 
+        # Fase 2: el render con el motor elegido completa el Job y limpia (Req 13.4).
+        resultado = runner.reanudar_render_job("job-run", "ass")
         assert resultado.exito is True
         prog = manager.obtener("job-run").progreso
         assert prog.estado == JobStatus.COMPLETADO
@@ -529,9 +585,14 @@ def test_runner_lanzar_en_background() -> None:
             futuro = await runner.lanzar("job-bg")
             return await futuro
 
+        # ``lanzar`` programa la ejecución en el executor; la fase 1 termina en la
+        # pausa de elección de motor (spec subtitulos-ia-remotion, tarea 8.2).
         resultado = asyncio.run(_run())
-        assert resultado.exito is True
-        assert manager.obtener("job-bg").progreso.estado == JobStatus.COMPLETADO
+        assert resultado.pendiente_eleccion_render is True
+        assert (
+            manager.obtener("job-bg").progreso.estado
+            == JobStatus.ESPERANDO_ELECCION_RENDER
+        )
 
 
 
@@ -1227,7 +1288,9 @@ def test_runner_resuelve_ids_de_clip_a_rutas() -> None:
 
         resultado = runner.ejecutar_job("job-resolver")
 
-        assert resultado.exito is True
+        # La resolución de ids ocurre en el paso UNIR (fase 1); el runner se pausa
+        # después para elegir el motor (spec subtitulos-ia-remotion, tarea 8.2).
+        assert resultado.pendiente_eleccion_render is True
         # El pipeline recibió RUTAS resueltas, no los ids.
         rutas_esperadas = [str(base / f"{cid}.mp4") for cid in ids]
         assert capturado["orden"] == rutas_esperadas
@@ -1255,7 +1318,9 @@ def test_runner_resolver_clip_por_defecto_es_identidad() -> None:
         runner = JobRunner(manager, **fakes)
         resultado = runner.ejecutar_job("job-id")
 
-        assert resultado.exito is True
+        # Fase 1 termina en la pausa de elección de motor (tarea 8.2); los ids se
+        # conservan tal cual con el resolutor por defecto (identidad).
+        assert resultado.pendiente_eleccion_render is True
         assert capturado["orden"] == ["id-1", "id-2"]
 
 

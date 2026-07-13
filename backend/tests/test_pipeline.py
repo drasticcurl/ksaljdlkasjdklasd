@@ -9,6 +9,14 @@ Verifica el modo ``VSE_SUBTITLES_FAILSOFT``:
   (comportamiento por defecto).
 
 Los pasos del pipeline se inyectan como dobles para no depender de binarios.
+
+NOTA (spec subtitulos-ia-remotion, tarea 8.2): el quemado de subtítulos ya NO se
+ejecuta dentro de ``ejecutar_pipeline`` (que ahora prepara los grupos y se
+**pausa** en ``ESPERANDO_ELECCION_RENDER`` para que el usuario elija el motor),
+sino en la **fase 2** (``reanudar_pipeline`` con el motor elegido). Por eso el
+helper ``_ejecutar`` ejercita el fail-soft del quemado ASS a través del flujo
+completo: fase 1 (pausa) → fase 2 (render con motor ``"ass"``), manteniendo la
+intención original de estos tests (comportamiento del fallo del quemado).
 """
 
 from __future__ import annotations
@@ -19,7 +27,7 @@ from typing import Any, List
 import pytest
 
 from app import config
-from app.engine.pipeline import ejecutar_pipeline
+from app.engine.pipeline import ejecutar_pipeline, reanudar_pipeline
 from app.engine.subtitles import SubtitulosError
 from app.models.job import JobStatus, PipelineStep
 from app.models.settings import Ajustes
@@ -42,7 +50,8 @@ def _fake_transcribir(cortado, ajustes_transc, audio, *, runner) -> List[Any]:
 
 
 def _fake_subtitulos_falla(
-    cortado, palabras, subtitulos, resolucion, ass_path, salida, *, runner, existe_salida
+    cortado, palabras, subtitulos, resolucion, ass_path, salida,
+    *, runner, existe_salida, grupos=None,
 ) -> Path:
     raise SubtitulosError("ffmpeg falló al quemar subtítulos: boom")
 
@@ -60,7 +69,8 @@ def _hacer_job(tmp_path: Path, monkeypatch, nombre: str) -> JobWorkdir:
 
 def _ejecutar(job: JobWorkdir):
     eventos = []
-    resultado = ejecutar_pipeline(
+    # Fase 1: prepara los grupos y se pausa para elegir el motor (sin renderizar).
+    r1 = ejecutar_pipeline(
         job,
         ["/clips/a.mp4"],
         Ajustes(),
@@ -69,6 +79,20 @@ def _ejecutar(job: JobWorkdir):
         fn_unir=_fake_unir,
         fn_cortar=_fake_cortar,
         fn_transcribir=_fake_transcribir,
+        fn_subtitulos=_fake_subtitulos_falla,
+        fn_preservar=_fake_preservar,
+    )
+    assert r1.pendiente_eleccion_render is True
+    # Fase 2: render con el motor elegido ("ass"); aquí ocurre (o no) el fallo del
+    # quemado de subtítulos que estos tests ejercitan.
+    resultado = reanudar_pipeline(
+        job,
+        r1.cortado,
+        Ajustes(),
+        grupos=r1.grupos,
+        motor="ass",
+        musica_wav=None,
+        reporter=eventos.append,
         fn_subtitulos=_fake_subtitulos_falla,
         fn_preservar=_fake_preservar,
     )

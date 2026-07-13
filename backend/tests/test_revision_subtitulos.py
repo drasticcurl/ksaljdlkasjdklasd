@@ -7,8 +7,10 @@ Cubre:
   con los grupos propuestos y el video ``cortado`` (sin quemar ni conservar).
 * Que ``reanudar_pipeline`` completa la fase 2 usando los **grupos editados**
   (se los pasa a ``fn_subtitulos`` mediante el kwarg ``grupos``).
-* Que sin la revisión (por defecto) el pipeline corre de principio a fin como
-  antes (no hay ``pendiente_revision``).
+* Que sin la revisión manual (por defecto) el pipeline NO renderiza
+  automáticamente: prepara los grupos finales y se pausa para la elección de
+  motor (``pendiente_eleccion_render``), sin ``pendiente_revision`` (spec
+  subtitulos-ia-remotion, tarea 8.2).
 """
 
 from __future__ import annotations
@@ -135,7 +137,15 @@ def test_sin_revision_corre_completo(tmp_path: Path, monkeypatch) -> None:
         fn_preservar=_fake_preservar,
     )
 
+    # Sin revisión manual, el pipeline ya NO renderiza automáticamente: prepara
+    # los grupos finales y se pausa para que el usuario elija el motor de render
+    # (spec subtitulos-ia-remotion, tarea 8.2, Req 6.1).
     assert resultado.pendiente_revision is False
-    assert resultado.exito is True
-    # En el flujo normal NO se pasa el kwarg grupos (queda en None por defecto).
-    assert spy.grupos_recibidos is None
+    assert resultado.pendiente_eleccion_render is True
+    assert resultado.exito is False
+    # En la fase 1 NO se queman subtítulos (se pausa antes del render).
+    assert spy.grupos_recibidos == "no-invocado"
+    # Los grupos finales quedan disponibles para la elección de motor.
+    assert resultado.grupos is not None and len(resultado.grupos) == 1
+    assert resultado.grupos[0].texto == "hola mundo"
+    assert resultado.cortado is not None

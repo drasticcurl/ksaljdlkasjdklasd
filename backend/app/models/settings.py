@@ -51,6 +51,25 @@ PresetSubtitulo = Literal["clasico", "resaltado", "bold_pop"]
 # Método de corte de silencios: por umbral de dB o por detección de voz (IA/VAD).
 ModoSilencio = Literal["db", "voz"]
 
+# ---------------------------------------------------------------------------
+# Constantes de la corrección de subtítulos con IA (OpenAI) y del motor de
+# render (spec subtitulos-ia-remotion, tarea 1.1; Req 1.1, 14.3).
+# ---------------------------------------------------------------------------
+# Modelos de OpenAI admitidos para la corrección de subtítulos (validación de
+# conjunto en la tarea 1.2). La clave de API NUNCA se persiste (es transitoria).
+SUPPORTED_OPENAI_MODELS: FrozenSet[str] = frozenset(
+    {"gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano", "gpt-4o-mini"}
+)
+# Modelo por defecto de la corrección con IA.
+DEFAULT_OPENAI_MODEL: str = "gpt-4.1-mini"
+
+# Motor de render del paso de subtítulos. Se ELIGE en tiempo de ejecución por el
+# usuario (dos botones en el frontend); NO se decide automáticamente por un
+# ajuste persistido.
+MotorRender = Literal["ass", "remotion"]
+# Preselección de UI por defecto (solo sugerencia visual del botón resaltado).
+DEFAULT_MOTOR_RENDER: MotorRender = "ass"
+
 
 class ResolucionObjetivo(BaseModel):
     """Resolución vertical de salida (Req 3.2). Rangos validados en la tarea 8."""
@@ -159,6 +178,36 @@ class AjustesMusica(BaseModel):
     liberacion_ms: int = Field(default=config.DEFAULT_LIBERACION_MS)
 
 
+class AjustesRevisionIA(BaseModel):
+    """Ajustes de la verificación/corrección de subtítulos con IA (opt-in).
+
+    Es la primera dependencia de red externa del sistema, por eso está
+    desactivada por defecto (Req 1.1). La clave de API NO se declara aquí: es
+    transitoria y no debe persistirse nunca en disco (Req 2.3, 14.3). Los rangos
+    de ``timeout_s``/``max_reintentos`` y el conjunto de ``modelo`` se validan en
+    la tarea 1.2.
+    """
+
+    activado: bool = Field(default=False)  # OPT-IN: desactivado por defecto
+    modelo: str = Field(default=DEFAULT_OPENAI_MODEL)
+    # Timeout (segundos) de la llamada a OpenAI y número de reintentos ante 429.
+    timeout_s: float = Field(default=20.0)
+    max_reintentos: int = Field(default=1)
+
+
+class AjustesRender(BaseModel):
+    """Ajustes del render de subtítulos (Paso 4c).
+
+    NOTA: NO existe ``fallback_ass``. El motor NO se decide automáticamente desde
+    aquí: la elección efectiva la hace el usuario en tiempo de ejecución con los
+    dos botones del frontend. ``motor_preferido`` es SOLO una preselección de UI
+    (qué botón aparece resaltado); no fuerza la ejecución.
+    """
+
+    motor_preferido: MotorRender = Field(default=DEFAULT_MOTOR_RENDER)  # solo UI
+    combine_tokens_ms: int = Field(default=1200)  # agrupación estilo TikTok
+
+
 class Ajustes(BaseModel):
     """Conjunto completo de ajustes enviado en `POST /procesar`.
 
@@ -172,6 +221,11 @@ class Ajustes(BaseModel):
     transcripcion: AjustesTranscripcion = Field(default_factory=AjustesTranscripcion)
     subtitulos: AjustesSubtitulos = Field(default_factory=AjustesSubtitulos)
     musica: Optional[AjustesMusica] = Field(default=None)
+    # Nuevas capacidades (spec subtitulos-ia-remotion): corrección con IA
+    # (opt-in) y ajustes del motor de render. Se añaden con default_factory para
+    # mantener compatibilidad hacia atrás con configuraciones ya persistidas.
+    revision_ia: AjustesRevisionIA = Field(default_factory=AjustesRevisionIA)
+    render: AjustesRender = Field(default_factory=AjustesRender)
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +375,15 @@ RANGOS_MOTOR: Dict[str, Tuple[float, float]] = {
     "musica.umbral_voz_dbfs": (-60.0, 0.0),         # umbral de voz en dBFS (Req 8.5)
     "musica.ataque_ms": (0, 250),                   # <= 250 ms de ataque (Req 8.5)
     "musica.liberacion_ms": (0, 500),               # <= 500 ms de liberación (Req 8.6)
+    # Corrección con IA / motor de render (spec subtitulos-ia-remotion).
+    # Timeout de la llamada a OpenAI 1..120 s (Req 11.2) y reintentos 0..5 ante
+    # 429 (Req 11.3). ``combine_tokens_ms`` es la ventana de agrupación estilo
+    # TikTok del motor Remotion 0..5000 ms (Req 11.4). Estos campos SIEMPRE se
+    # validan (no dependen de ``revision_ia.activado``): un valor fuera de rango
+    # es un error de ajustes independientemente de si la IA se usará.
+    "revision_ia.timeout_s": (1.0, 120.0),          # 1..120 s (Req 11.2)
+    "revision_ia.max_reintentos": (0, 5),           # 0..5 reintentos (Req 11.3)
+    "render.combine_tokens_ms": (0, 5000),          # 0..5000 ms (Req 11.4)
 }
 
 # Campos con conjunto/formato permitido (no numéricos por rango). Se validan de
@@ -398,6 +461,15 @@ def validar_ajustes(ajustes: "Ajustes") -> List[str]:
     if not color_valido(ajustes.subtitulos.color_resaltado):
         invalidos.append("subtitulos.color_resaltado")
 
+    # Corrección con IA (Req 11.1): solo cuando está activada se exige que el
+    # modelo pertenezca al conjunto soportado por OpenAI. Con la IA desactivada
+    # el modelo es irrelevante y no se rechaza.
+    if (
+        ajustes.revision_ia.activado
+        and ajustes.revision_ia.modelo not in SUPPORTED_OPENAI_MODELS
+    ):
+        invalidos.append("revision_ia.modelo")
+
     return invalidos
 
 
@@ -433,9 +505,16 @@ __all__: List[str] = [
     "AjustesTranscripcion",
     "AjustesSubtitulos",
     "AjustesMusica",
+    "AjustesRevisionIA",
+    "AjustesRender",
     "Ajustes",
     "Palabra",
     "GrupoSubtitulo",
+    # Constantes IA / motor de render (spec subtitulos-ia-remotion)
+    "SUPPORTED_OPENAI_MODELS",
+    "DEFAULT_OPENAI_MODEL",
+    "MotorRender",
+    "DEFAULT_MOTOR_RENDER",
     # Validación (Tarea 8)
     "IDIOMA_AUTO",
     "SUPPORTED_WHISPER_MODELS",

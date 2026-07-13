@@ -75,4 +75,19 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   },
   // La música es opcional: null hasta que se sube un WAV válido (Req 8.1).
   musica: null,
+  // Corrección de subtítulos con IA (OpenAI): OPT-IN, desactivada por defecto
+  // (primera dependencia de red externa). La clave de API NO se guarda aquí:
+  // es transitoria y viaja aparte en POST /procesar (spec subtitulos-ia-remotion).
+  revision_ia: {
+    activado: false,
+    modelo: 'gpt-4.1-mini',
+    timeout_s: 20,
+    max_reintentos: 1,
+  },
+  // Render de subtítulos: el motor lo elige el usuario en tiempo de ejecución;
+  // `motor_preferido` solo resalta un botón en la UI (no fuerza la ejecución).
+  render: {
+    motor_preferido: 'ass',
+    combine_tokens_ms: 1200,
+  },
 };

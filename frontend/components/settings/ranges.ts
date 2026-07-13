@@ -131,6 +131,28 @@ export const MODOS_SILENCIO: ReadonlyArray<{ valor: string; etiqueta: string }> 
   { valor: 'db', etiqueta: 'Umbral de volumen (dB)' },
 ];
 
+// ---------------------------------------------------------------------------
+// Corrección de subtítulos con IA (OpenAI) — spec subtitulos-ia-remotion.
+// Alineado con SUPPORTED_OPENAI_MODELS/DEFAULT_OPENAI_MODEL del backend
+// (`backend/app/models/settings.py`).
+// ---------------------------------------------------------------------------
+
+/** Modelos de OpenAI admitidos para la corrección de subtítulos (Req 11.1). */
+export const SUPPORTED_OPENAI_MODELS: readonly string[] = [
+  'gpt-4.1-mini',
+  'gpt-4.1',
+  'gpt-4.1-nano',
+  'gpt-4o-mini',
+];
+
+/** Modelo de OpenAI por defecto de la corrección con IA. */
+export const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini';
+
+/** Indica si `modelo` pertenece a los modelos de OpenAI admitidos (Req 11.1). */
+export function modeloOpenAIValido(modelo: string): boolean {
+  return SUPPORTED_OPENAI_MODELS.includes(modelo);
+}
+
 /** Formato de color hexadecimal `#RRGGBB` (Req 7.8, 9.1). */
 const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
 

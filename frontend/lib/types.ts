@@ -154,6 +154,48 @@ export interface AjustesSubtitulos {
   slide_px: number;
 }
 
+/**
+ * Motor de render del paso de subtítulos (spec subtitulos-ia-remotion).
+ *
+ * `ass` = quemado con ffmpeg/libass (clásico); `remotion` = vídeo programático
+ * (React) con subtítulos animados de mayor calidad. La elección la hace el
+ * usuario en tiempo de ejecución mediante dos botones; no es automática.
+ */
+export type MotorRender = 'ass' | 'remotion';
+
+/**
+ * Ajustes de la corrección de subtítulos con IA (OpenAI GPT-4.1 mini), opt-in.
+ *
+ * Es la primera dependencia de red externa del sistema, por eso `activado` es
+ * `false` por defecto. La clave de API NO se declara aquí: es transitoria y no
+ * debe persistirse nunca (viaja como campo aparte en `POST /procesar`).
+ * Espejo de `AjustesRevisionIA` en `backend/app/models/settings.py`.
+ */
+export interface AjustesRevisionIA {
+  /** OPT-IN: desactivado por defecto (Req 1.1). */
+  activado: boolean;
+  /** Modelo de OpenAI (por defecto `gpt-4.1-mini`). */
+  modelo: string;
+  /** Timeout de la llamada a OpenAI en segundos: 1..120, def 20. */
+  timeout_s: number;
+  /** Reintentos ante 429: 0..5, def 1. */
+  max_reintentos: number;
+}
+
+/**
+ * Ajustes del render de subtítulos (Paso 4c).
+ *
+ * NO existe `fallback_ass`: el motor lo elige el usuario en tiempo de ejecución
+ * (dos botones). `motor_preferido` es SOLO una preselección de UI (qué botón se
+ * resalta); no fuerza la ejecución. Espejo de `AjustesRender` en el backend.
+ */
+export interface AjustesRender {
+  /** Preselección de UI del botón resaltado (Req 6.3). Def `ass`. */
+  motor_preferido: MotorRender;
+  /** Ventana de agrupación de tokens estilo TikTok (ms): 0..5000, def 1200. */
+  combine_tokens_ms: number;
+}
+
 /** Ajustes de música de fondo y ducking (Req 8). */
 export interface AjustesMusica {
   /** Volumen base de la música: 0..100 %, def 30. */
@@ -178,6 +220,10 @@ export interface Ajustes {
   subtitulos: AjustesSubtitulos;
   /** Música opcional: `null` si no se agregó WAV (el paso 5 se omite). */
   musica: AjustesMusica | null;
+  /** Corrección de subtítulos con IA (opt-in, spec subtitulos-ia-remotion). */
+  revision_ia: AjustesRevisionIA;
+  /** Ajustes del motor de render de subtítulos (spec subtitulos-ia-remotion). */
+  render: AjustesRender;
 }
 
 /** Alias en inglés usado por parte de la UI; equivalente a `Ajustes`. */
@@ -195,6 +241,13 @@ export interface ProcesarRequest {
   musica_id: string | null;
   /** Ajustes completos configurados en la UI. */
   ajustes: Ajustes;
+  /**
+   * Clave de API de OpenAI transitoria (spec subtitulos-ia-remotion). NO forma
+   * parte de `Ajustes` ni se persiste con `guardarConfiguracion`: viaja solo en
+   * esta petición y el backend la mantiene en memoria mientras dura el Job. Se
+   * omite del cuerpo si es `null`/`undefined`/vacía.
+   */
+  openai_api_key?: string | null;
 }
 
 /** Respuesta de `POST /procesar` (202). */
@@ -212,6 +265,7 @@ export type JobStatus =
   | 'en_cola'
   | 'en_ejecucion'
   | 'esperando_revision'
+  | 'esperando_eleccion_render'
   | 'completado'
   | 'fallido';
 
@@ -227,6 +281,24 @@ export interface SubtitulosRevision {
   job_id: string;
   estado: JobStatus;
   editable: boolean;
+  grupos: GrupoSubtitulo[];
+}
+
+/**
+ * Respuesta de `GET /render/{id}` (spec subtitulos-ia-remotion).
+ *
+ * Se consulta cuando el Job está en `esperando_eleccion_render`: expone los
+ * grupos de subtítulo ya corregidos (solo lectura) y la preselección de motor
+ * para resaltar el botón sugerido.
+ */
+export interface RenderEleccion {
+  job_id: string;
+  estado: JobStatus;
+  /** Si los grupos aún pueden editarse (en esta fase suele ser `false`). */
+  editable: boolean;
+  /** Preselección de UI del botón a resaltar. */
+  motor_preferido: MotorRender;
+  /** Subtítulos corregidos, en solo lectura, para revisar antes de elegir motor. */
   grupos: GrupoSubtitulo[];
 }
 

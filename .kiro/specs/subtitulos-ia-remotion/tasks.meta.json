@@ -1,0 +1,264 @@
+{
+  "pbtResults": {
+    "1.3 Prueba de propiedad: round-trip de serialización de `Ajustes`": {
+      "status": "passed",
+      "lastRunTimestamp": 1783944122066
+    },
+    "1.4 Pruebas unitarias de validación de ajustes": {
+      "status": "passed",
+      "lastRunTimestamp": 1783944324246
+    }
+  },
+  "executionHistory": {
+    "1.1 Añadir modelos y constantes de IA/render en `models/settings.py`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683874
+      },
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943696777
+      },
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943861914
+      }
+    ],
+    "1.2 Extender la validación de ajustes": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683878
+      },
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943877805
+      },
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943970374
+      }
+    ],
+    "2.1 Implementar `corregir_grupos_ia` con cliente OpenAI inyectable": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683882
+      },
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783944369509
+      },
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783944681024
+      }
+    ],
+    "3.1 Añadir `openai_api_key` transitorio a `ProcesarRequest` (`api/process.py`)": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683889
+      }
+    ],
+    "3.2 Almacenar la clave fuera de la serialización del Job (`jobs/manager.py`, `models/job.py`)": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683892
+      }
+    ],
+    "3.3 Leer la clave en el `JobRunner` y pasarla a la corrección IA (`jobs/runner.py`)": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683895
+      }
+    ],
+    "4.1 Añadir el estado `ESPERANDO_ELECCION_RENDER` al modelo de Job (`models/job.py`)": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683898
+      }
+    ],
+    "4.2 Implementar `preparar_grupos_y_pausar` en `engine/pipeline.py`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683903
+      }
+    ],
+    "5.1 Implementar el mapeo `GrupoSubtitulo → Caption`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683906
+      }
+    ],
+    "5.2 Implementar `renderizar_con_remotion` con `Runner` inyectable": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683909
+      }
+    ],
+    "6.1 Inicializar el proyecto Remotion": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683912
+      }
+    ],
+    "6.2 Implementar `Root.tsx` y la composición `ShortVideo`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683916
+      }
+    ],
+    "6.3 Implementar `Captions.tsx` con `@remotion/captions`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683920
+      }
+    ],
+    "6.4 Implementar `render.mjs` (entrypoint SSR)": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683923
+      }
+    ],
+    "7.1 Implementar `renderizar_con_motor_elegido` en `engine/pipeline.py`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683926
+      }
+    ],
+    "7.2 Manejar el fallo del motor como Job `FALLIDO`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683929
+      }
+    ],
+    "8.1 Implementar `POST /render/{id}` en `api/subtitles.py`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683933
+      }
+    ],
+    "8.2 Integrar la reanudación en el `JobRunner` (`jobs/runner.py`)": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683936
+      }
+    ],
+    "9.1 Añadir tipos y llamadas de API (`lib/types.ts`, `lib/api.ts`)": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683939
+      }
+    ],
+    "9.2 Implementar `components/settings/OpenAIKeyInput.tsx`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683942
+      }
+    ],
+    "9.3 Implementar `components/settings/AjustesRevisionIA.tsx`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683946
+      }
+    ],
+    "9.4 Implementar `components/EleccionRender.tsx`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683949
+      }
+    ],
+    "10.1 Pruebas de integración del pipeline con dobles (parametrizado por motor)": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683952
+      }
+    ],
+    "10.2 Prueba de integración del fallo sin fallback": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683955
+      }
+    ],
+    "10.3 Prueba de integración de no persistencia de la clave y round-trip de ajustes": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683958
+      }
+    ],
+    "11. Checkpoint final": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943683962
+      }
+    ],
+    "1. Modelos de datos, validación y serialización de ajustes": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943970377
+      }
+    ],
+    "1.3 Prueba de propiedad: round-trip de serialización de `Ajustes`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783943994967
+      },
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783944162190
+      }
+    ],
+    "1.4 Pruebas unitarias de validación de ajustes": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783944165496
+      },
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783944361808
+      }
+    ],
+    "2. Motor_Revision_IA en `engine/ai_review.py`": [
+      {
+        "executionId": "c20738e0-b3e6-4c28-b940-7ffb5e598616",
+        "chatSessionId": "068e5115-bdfd-49b5-9c0d-7e922831da05",
+        "timestamp": 1783944681027
+      }
+    ]
+  }
+}

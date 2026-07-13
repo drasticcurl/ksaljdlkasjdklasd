@@ -28,8 +28,10 @@ from app.engine.pipeline import (
     ReporteProgreso,
     ResultadoPipeline,
     ejecutar_pipeline,
+    preparar_grupos_y_pausar,
     reanudar_pipeline,
 )
+from app.models.settings import DEFAULT_MOTOR_RENDER, MotorRender
 from app.engine.proc import Runner, ejecutar_comando
 from app.jobs.manager import JobManager
 from app.storage.workdir import JobWorkdir
@@ -127,6 +129,12 @@ class JobRunner:
         job_wd = JobWorkdir(job_id)
         reporter = self._crear_reporter(job_id)
         musica_wav = self.resolver_musica(job_state.musica_id)
+        # Clave transitoria de OpenAI para la corrección con IA (spec
+        # subtitulos-ia-remotion, Req 2.4, 1.2). Se recupera del Gestor de Jobs
+        # (mapa en memoria, fuera de la serialización del Job) y se propaga al
+        # pipeline como canal para el sub-paso de IA (integración en la Tarea 4).
+        # NUNCA se registra en logs ni se incluye en mensajes de error.
+        api_key = self.manager.obtener_api_key(job_id)
 
         # El ``Orden_de_Clips`` almacenado contiene identificadores de clip; el
         # pipeline (paso UNIR → ``ffprobe``) necesita RUTAS de archivo reales, así
@@ -145,6 +153,7 @@ class JobRunner:
                 orden_rutas,
                 job_state.ajustes,
                 musica_wav=musica_wav,
+                api_key=api_key,
                 reporter=reporter,
                 runner=self.runner,
                 **self._inyecciones,
@@ -153,6 +162,20 @@ class JobRunner:
                 # Pausa por revisión manual: guardar grupos + video cortado y
                 # dejar el Job a la espera SIN limpiar los temporales.
                 self.manager.marcar_esperando_revision(
+                    job_id,
+                    str(resultado.cortado) if resultado.cortado is not None else "",
+                    resultado.grupos,
+                )
+                limpiar = False
+                return resultado
+            if resultado.pendiente_eleccion_render:
+                # Pausa por elección de motor de render (spec subtitulos-ia-remotion,
+                # Req 6.1): el pipeline preparó los ``grupos_finales`` y se detuvo
+                # SIN renderizar. Se persiste el estado ESPERANDO_ELECCION_RENDER
+                # (con el video ``cortado`` y los grupos finales) y NO se limpia el
+                # workdir (los intermedios se necesitan al reanudar con el motor
+                # que elija el usuario vía POST /render/{id}).
+                self.manager.marcar_esperando_eleccion_render(
                     job_id,
                     str(resultado.cortado) if resultado.cortado is not None else "",
                     resultado.grupos,
@@ -193,19 +216,28 @@ class JobRunner:
         return resultado
 
     def reanudar_job(self, job_id: str, grupos: Any) -> ResultadoPipeline:
-        """Reanuda la **fase 2** de un Job pausado en la revisión de subtítulos.
+        """Aplica los subtítulos editados y **pausa** para elegir el motor.
 
-        Toma los ``grupos`` de subtítulo (ya editados por el usuario) y ejecuta
-        :func:`reanudar_pipeline` sobre el video ``cortado`` guardado durante la
-        pausa: quema los subtítulos, mezcla música (si la hay) y conserva el
-        ``Video_Final``. Al terminar —éxito o error— limpia el workdir.
+        Reanuda un Job pausado en ``ESPERANDO_REVISION`` (revisión manual de
+        subtítulos): toma los ``grupos`` de subtítulo ya editados por el usuario y
+        prepara los ``grupos_finales`` con :func:`preparar_grupos_y_pausar`
+        (agrupación no aplica —los grupos vienen dados— + corrección IA opcional
+        con la ``api_key`` transitoria). En lugar de renderizar directamente
+        (comportamiento previo), el Job vuelve a pausarse en
+        ``ESPERANDO_ELECCION_RENDER`` a la espera de que el usuario elija el motor
+        de render (spec subtitulos-ia-remotion, Req 6.1): el render efectivo lo
+        dispara ``POST /render/{id}`` (ver :meth:`reanudar_render_job`).
+
+        **NO** limpia el workdir: los intermedios (video ``cortado``) se necesitan
+        para el render de la reanudación posterior.
 
         Args:
             job_id: Identificador del Job pausado en ``ESPERANDO_REVISION``.
             grupos: Grupos de subtítulo editados a aplicar.
 
         Returns:
-            El :class:`ResultadoPipeline` de la fase 2.
+            El :class:`ResultadoPipeline` señalizando la pausa de elección de
+            motor (``pendiente_eleccion_render=True``).
 
         Raises:
             KeyError: Si el Job no existe en el Gestor.
@@ -214,12 +246,83 @@ class JobRunner:
         if job_state is None:
             raise KeyError(f"Job inexistente: {job_id!r}")
 
-        # Volver a EN_EJECUCION (desde ESPERANDO_REVISION) para la fase 2.
+        # Volver a EN_EJECUCION (desde ESPERANDO_REVISION) mientras se preparan
+        # los grupos finales.
+        self.manager.marcar_en_ejecucion(job_id)
+        reporter = self._crear_reporter(job_id)
+        cortado = job_state.cortado_path or ""
+        # Clave transitoria de OpenAI para la corrección con IA de los grupos
+        # editados (Req 2.4). Nunca se registra en logs.
+        api_key = self.manager.obtener_api_key(job_id)
+
+        resultado: ResultadoPipeline
+        try:
+            resultado = preparar_grupos_y_pausar(
+                cortado,
+                job_state.ajustes,
+                palabras=[],
+                grupos=grupos,
+                api_key=api_key,
+                reporter=reporter,
+            )
+            # Persistir la pausa de elección de motor con los grupos ya
+            # definitivos. NO se limpia el workdir (se necesita para el render).
+            self.manager.marcar_esperando_eleccion_render(
+                job_id,
+                str(resultado.cortado) if resultado.cortado is not None else cortado,
+                resultado.grupos,
+            )
+        except Exception as exc:  # noqa: BLE001 - fallo inesperado => Job fallido
+            logger.exception(
+                "Fallo inesperado al preparar los grupos del Job %s", job_id
+            )
+            self.manager.marcar_fallido(job_id, "PIPELINE", str(exc))
+            resultado = ResultadoPipeline(exito=False, motivo=str(exc))
+            # Solo en fallo se limpia el workdir (no habrá render posterior).
+            try:
+                JobWorkdir(job_id).cleanup()
+            except Exception:  # noqa: BLE001 - la limpieza no debe propagar
+                logger.exception("Fallo al limpiar el workdir del Job %s", job_id)
+
+        return resultado
+
+    def reanudar_render_job(
+        self, job_id: str, motor: MotorRender = DEFAULT_MOTOR_RENDER
+    ) -> ResultadoPipeline:
+        """Reanuda la **fase 2** (render) con el motor elegido por el usuario.
+
+        Reanuda un Job pausado en ``ESPERANDO_ELECCION_RENDER`` ejecutando
+        :func:`reanudar_pipeline` sobre el video ``cortado`` y los
+        ``grupos_finales`` guardados durante la pausa, con **exactamente** el
+        ``motor`` elegido (``"ass"`` | ``"remotion"``) y **sin fallback** entre
+        motores (spec subtitulos-ia-remotion, Req 6.4, 7.1-7.4): renderiza los
+        subtítulos, mezcla música (si la hay) y conserva el ``Video_Final``. El
+        progreso se reporta de forma monótona en el rango 70–90 % del paso
+        SUBTITULOS (Req 6.4). Al terminar —éxito o error— limpia el workdir
+        (Req 13.3): si el motor elegido falla, el Job pasa a ``FALLIDO`` con error
+        accionable, sin reintentar el otro motor.
+
+        Args:
+            job_id: Identificador del Job pausado en ``ESPERANDO_ELECCION_RENDER``.
+            motor: Motor de render elegido (``"ass"`` | ``"remotion"``).
+
+        Returns:
+            El :class:`ResultadoPipeline` de la fase 2 (render).
+
+        Raises:
+            KeyError: Si el Job no existe en el Gestor.
+        """
+        job_state = self.manager.obtener(job_id)
+        if job_state is None:
+            raise KeyError(f"Job inexistente: {job_id!r}")
+
+        # Volver a EN_EJECUCION (desde ESPERANDO_ELECCION_RENDER) para el render.
         self.manager.marcar_en_ejecucion(job_id)
         job_wd = JobWorkdir(job_id)
         reporter = self._crear_reporter(job_id)
         musica_wav = self.resolver_musica(job_state.musica_id)
         cortado = job_state.cortado_path or ""
+        grupos = job_state.grupos_finales or []
 
         resultado: ResultadoPipeline
         try:
@@ -229,6 +332,7 @@ class JobRunner:
                 job_state.ajustes,
                 palabras=[],
                 grupos=grupos,
+                motor=motor,
                 musica_wav=musica_wav,
                 reporter=reporter,
                 runner=self.runner,
@@ -250,7 +354,9 @@ class JobRunner:
                     resultado.motivo or "fallo del pipeline",
                 )
         except Exception as exc:  # noqa: BLE001 - fallo inesperado => Job fallido
-            logger.exception("Fallo inesperado al reanudar el Job %s", job_id)
+            logger.exception(
+                "Fallo inesperado al reanudar el render del Job %s", job_id
+            )
             self.manager.marcar_fallido(job_id, "PIPELINE", str(exc))
             resultado = ResultadoPipeline(exito=False, motivo=str(exc))
         finally:
@@ -286,6 +392,24 @@ class JobRunner:
         """
         loop = asyncio.get_event_loop()
         return loop.run_in_executor(None, self.reanudar_job, job_id, grupos)
+
+    async def lanzar_reanudacion_render(
+        self, job_id: str, motor: MotorRender = DEFAULT_MOTOR_RENDER
+    ) -> asyncio.Future:
+        """Lanza el render (fase 2) con el motor elegido en background sin bloquear.
+
+        Programa :meth:`reanudar_render_job` en el executor por defecto y devuelve
+        el ``Future`` de inmediato, de modo que ``POST /render/{id}`` pueda
+        responder ``202`` rápidamente mientras el render corre en segundo plano
+        (spec subtitulos-ia-remotion, Req 6.3, 8.1).
+
+        Returns:
+            El ``Future`` de la ejecución en background (no se espera aquí).
+        """
+        loop = asyncio.get_event_loop()
+        return loop.run_in_executor(
+            None, self.reanudar_render_job, job_id, motor
+        )
 
 
 __all__ = ["JobRunner", "ResolverMusica", "ResolverClip"]

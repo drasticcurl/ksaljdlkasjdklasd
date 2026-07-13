@@ -122,6 +122,13 @@ class ProcesarRequest(BaseModel):
     orden_clips: Optional[List[str]] = Field(default=None)
     musica_id: Optional[str] = Field(default=None)
     ajustes: Optional[Ajustes] = Field(default=None)
+    # TRANSITORIO (spec subtitulos-ia-remotion, Req 2.2, 8.3, 14.3): clave de
+    # OpenAI para la corrección con IA. Viaja con la petición de procesado y se
+    # propaga al ``JobManager`` EN MEMORIA; **nunca** se serializa a disco
+    # (``config_store`` solo persiste ``Ajustes``, y esta clave está FUERA de
+    # ``Ajustes``) ni se registra en logs (``repr=False`` la excluye de la
+    # representación del modelo). Puede ser ``None`` (IA desactivada / sin clave).
+    openai_api_key: Optional[str] = Field(default=None, repr=False)
 
 
 def _invalid_request(message: str, details: dict) -> JSONResponse:
@@ -191,6 +198,10 @@ async def procesar(
         peticion.ajustes,
         workdir,
         musica_id=peticion.musica_id,
+        # Clave transitoria de OpenAI (Req 2.2): se propaga al Gestor de Jobs,
+        # que la guarda FUERA de la serialización del Job (mapa en memoria) y la
+        # elimina al alcanzar un estado terminal. Nunca se persiste ni se loguea.
+        openai_api_key=peticion.openai_api_key,
     )
 
     # Lanza el pipeline sin bloquear: ``lanzar`` programa la ejecución en el

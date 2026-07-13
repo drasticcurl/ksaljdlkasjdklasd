@@ -44,6 +44,12 @@ class JobManager:
 
     def __init__(self) -> None:
         self._jobs: Dict[str, JobState] = {}
+        # Claves de API de OpenAI transitorias por Job (spec subtitulos-ia-remotion,
+        # Req 2.3, 2.4). Se guardan en un mapa APARTE del ``JobState`` a propósito:
+        # así la clave NUNCA forma parte del modelo del Job ni de su ``model_dump``
+        # (no se serializa a disco, no aparece en ``GET /progreso`` ni en logs). Se
+        # elimina de este mapa cuando el Job alcanza un estado terminal (Req 2.5).
+        self._api_keys: Dict[str, str] = {}
         self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
@@ -57,8 +63,15 @@ class JobManager:
         workdir: str,
         *,
         musica_id: Optional[str] = None,
+        openai_api_key: Optional[str] = None,
     ) -> JobState:
         """Registra un nuevo Job en estado ``EN_COLA`` (Req 10.3).
+
+        La ``openai_api_key`` (opcional, spec subtitulos-ia-remotion, Req 2.2,
+        2.3) es la clave transitoria de OpenAI para la corrección con IA. Se
+        almacena en un mapa EN MEMORIA separado del ``JobState`` (:meth:`obtener_api_key`),
+        de modo que **nunca** se serialice con el Job ni se persista en disco; se
+        elimina al alcanzar un estado terminal (Req 2.5). Si es falsy no se guarda.
 
         Raises:
             ValueError: Si ya existe un Job con ese ``job_id``.
@@ -75,7 +88,32 @@ class JobManager:
                 progreso=Progress(estado=JobStatus.EN_COLA),
             )
             self._jobs[job_id] = estado
+            # La clave se guarda FUERA del JobState (mapa aparte) y solo si viene
+            # informada; así no contamina la serialización del Job (Req 2.4).
+            if openai_api_key:
+                self._api_keys[job_id] = openai_api_key
             return estado
+
+    # ------------------------------------------------------------------
+    # Clave de API transitoria (fuera de la serialización del Job)
+    # ------------------------------------------------------------------
+    def obtener_api_key(self, job_id: str) -> Optional[str]:
+        """Devuelve la clave transitoria de OpenAI del Job, o ``None``.
+
+        La lee el :class:`~app.jobs.runner.JobRunner` al ejecutar el pipeline
+        para pasársela a la corrección con IA (Req 2.4). Nunca debe registrarse
+        en logs ni exponerse en respuestas de la API.
+        """
+        with self._lock:
+            return self._api_keys.get(job_id)
+
+    def _eliminar_api_key(self, job_id: str) -> None:
+        """Elimina de memoria la clave transitoria del Job (Req 2.5).
+
+        Debe invocarse dentro del lock. Es idempotente: si no había clave, no
+        hace nada.
+        """
+        self._api_keys.pop(job_id, None)
 
     def existe(self, job_id: str) -> bool:
         """Indica si hay un Job registrado con ``job_id``."""
@@ -125,6 +163,38 @@ class JobManager:
             job.actualizado_en = _ahora()
             return job
 
+    def marcar_esperando_eleccion_render(
+        self,
+        job_id: str,
+        cortado_path: str,
+        grupos_finales: object,
+    ) -> JobState:
+        """Pausa el Job en ``ESPERANDO_ELECCION_RENDER`` (spec subtitulos-ia-remotion, Req 6.1).
+
+        Se invoca cuando el pipeline ha preparado los ``grupos_finales`` (grupos
+        ya agrupados y corregidos con IA si estaba activada) y queda a la espera
+        de que el usuario elija el motor de render mediante los dos botones del
+        frontend. Almacena la ruta del video ``cortado`` (sobre el que se
+        renderizarán los subtítulos al reanudar con el motor elegido) y los
+        ``grupos_finales`` en su campo DEDICADO del :class:`JobState`.
+
+        Análogo a :meth:`marcar_esperando_revision`, pero para la pausa de
+        elección de motor: el estado es NO terminal, por lo que la clave de API
+        transitoria NO se descarta aquí (solo se elimina al alcanzar un estado
+        terminal, Req 2.5). El porcentaje/índice de paso alcanzados se conservan
+        respetando la monotonicidad (Req 6.4, 10.5).
+        """
+        with self._lock:
+            job = self._exigir(job_id)
+            job.cortado_path = cortado_path
+            job.grupos_finales = (
+                list(grupos_finales) if grupos_finales is not None else []
+            )
+            job.progreso.estado = JobStatus.ESPERANDO_ELECCION_RENDER
+            job.progreso.mensaje = "Esperando elección del motor de render"
+            job.actualizado_en = _ahora()
+            return job
+
     def marcar_completado(
         self, job_id: str, ruta_video_final: Optional[str] = None
     ) -> JobState:
@@ -137,6 +207,8 @@ class JobManager:
             job.progreso.error = None
             if ruta_video_final is not None:
                 job.ruta_video_final = ruta_video_final
+            # Estado terminal: descartar la clave transitoria de memoria (Req 2.5).
+            self._eliminar_api_key(job_id)
             job.actualizado_en = _ahora()
             return job
 
@@ -149,6 +221,8 @@ class JobManager:
             job.progreso.estado = JobStatus.FALLIDO
             paso_val = paso.value if isinstance(paso, PipelineStep) else str(paso)
             job.progreso.error = {"paso": paso_val, "motivo": motivo}
+            # Estado terminal: descartar la clave transitoria de memoria (Req 2.5).
+            self._eliminar_api_key(job_id)
             job.actualizado_en = _ahora()
             return job
 
