@@ -30,6 +30,7 @@ from app.api.process import obtener_gestor_jobs
 from app.jobs.manager import JobManager
 from app.models.errors import error_envelope
 from app.models.job import JobStatus
+from app.storage.workdir import JobWorkdir, WorkdirContainmentError
 
 router = APIRouter(tags=["descargar"])
 
@@ -91,3 +92,46 @@ async def descargar(
         media_type="video/mp4",
         filename=f"{job_id}.mp4",
     )
+
+
+@router.get("/workfile/{job_id}/{nombre}")
+async def workfile(
+    job_id: str,
+    nombre: str,
+    manager: JobManager = Depends(obtener_gestor_jobs),
+):
+    """Sirve un artefacto **intermedio** del workdir de un Job por HTTP.
+
+    A diferencia de ``GET /descargar/{id}`` (que entrega el ``Video_Final`` como
+    descarga adjunta), este endpoint sirve archivos intermedios del directorio de
+    trabajo del Job (p. ej. ``cortado.mp4``) **para reproducción**, sin cabecera
+    ``Content-Disposition: attachment``. Su propósito es que el motor de render
+    Remotion pueda **descargar el vídeo de fondo por HTTP** durante el render
+    (spec subtitulos-ia-remotion): ``<OffthreadVideo src>`` no acepta rutas
+    absolutas del disco (se interpretarían como relativas al bundle y darían
+    404), por lo que el vídeo intermedio se expone como URL del backend.
+
+    Seguridad:
+
+    * Si el Job no existe → ``404 JOB_NOT_FOUND``.
+    * La ruta se resuelve con :meth:`JobWorkdir.resolve`, que valida la contención
+      dentro del workdir y **rechaza el path traversal** (``..`` / rutas
+      absolutas) con :class:`WorkdirContainmentError`; se responde ``404``.
+    * Si el archivo no existe en disco → ``404``.
+    """
+    job = manager.obtener(job_id)
+    if job is None:
+        return _no_encontrado(job_id)
+
+    # Resolución contenida dentro del workdir del Job: rechaza path traversal.
+    try:
+        ruta = JobWorkdir(job_id).resolve(nombre)
+    except WorkdirContainmentError:
+        return _no_encontrado(job_id)
+
+    if not ruta.exists():
+        return _no_encontrado(job_id)
+
+    # Se sirve para reproducir (sin ``filename``/attachment), de modo que el
+    # motor Remotion pueda leerlo por HTTP durante el render.
+    return FileResponse(path=str(ruta), media_type="video/mp4")

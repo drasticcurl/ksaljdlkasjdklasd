@@ -239,11 +239,17 @@ def construir_props(
     fps: int,
     duration_in_frames: int,
     combine_tokens_ms: int,
+    video_src: Optional[str] = None,
 ) -> Dict[str, object]:
     """Construye el diccionario de ``inputProps`` que consume la composición Node.
 
-    El ``videoSrc`` se resuelve a **ruta absoluta** para que Node/Remotion pueda
-    localizar el vídeo con independencia del directorio de trabajo del proceso.
+    Sobre ``videoSrc``: ``<OffthreadVideo src>`` de Remotion **no** acepta una
+    ruta absoluta del disco (la interpretaría como relativa al bundle servido en
+    ``http://localhost:.../`` y devolvería 404); solo admite una URL remota o un
+    ``staticFile()`` de ``public/``. Por eso, cuando se dispone de una URL HTTP
+    del backend (``video_src``), se usa como ``videoSrc``. Si no se proporciona
+    (``None``), se conserva el comportamiento previo de resolver la **ruta
+    absoluta** de ``entrada`` (compatibilidad con los tests existentes).
 
     Args:
         entrada: Ruta del vídeo de fondo (cortado).
@@ -253,13 +259,17 @@ def construir_props(
         fps: Cuadros por segundo.
         duration_in_frames: Duración del vídeo en frames (``duración * fps``).
         combine_tokens_ms: Ventana de agrupación estilo TikTok (ms).
+        video_src: URL HTTP del vídeo de fondo a usar como ``videoSrc`` (p. ej.
+            servida por ``GET /workfile/{job_id}/{nombre}``). Si es ``None``, se
+            usa la ruta absoluta de ``entrada``.
 
     Returns:
         El diccionario de props serializable a JSON.
     """
     captions = [caption_a_dict(c) for c in mapear_grupos_a_captions(grupos)]
+    video_src_final = video_src if video_src is not None else str(Path(entrada).resolve())
     return {
-        "videoSrc": str(Path(entrada).resolve()),
+        "videoSrc": video_src_final,
         "fps": int(fps),
         "width": int(resolucion.ancho),
         "height": int(resolucion.alto),
@@ -378,6 +388,7 @@ def renderizar_con_remotion(
     combine_tokens_ms: int = AjustesRender().combine_tokens_ms,
     duracion_s: Optional[float] = None,
     inspeccionar: Optional[Callable[[str], ClipInfo]] = None,
+    video_url: Optional[str] = None,
 ) -> Path:
     """Renderiza el vídeo con Remotion (Node) y valida el artefacto (Req 9, 12, 13).
 
@@ -413,6 +424,11 @@ def renderizar_con_remotion(
             inspecciona el vídeo con ``inspeccionar``.
         inspeccionar: Inspector de vídeo inyectable (análogo a ``ffprobe``) para
             obtener la duración cuando ``duracion_s`` es ``None``.
+        video_url: URL HTTP del vídeo de fondo que se pasa como ``videoSrc`` en
+            ``props.json`` (Remotion la descarga durante el render). Si es
+            ``None`` se usa la ruta absoluta de ``entrada`` (comportamiento
+            previo). La duración se sigue calculando desde ``entrada`` (el backend
+            tiene el archivo en disco), no desde esta URL.
 
     Returns:
         La ruta del MP4 renderizado (``Path(salida)``).
@@ -431,7 +447,9 @@ def renderizar_con_remotion(
         entrada, grupos, fps, duracion_s, inspeccionar
     )
 
-    # (2) Serializar props.json dentro del directorio de trabajo (Req 9.1).
+    # (2) Serializar props.json dentro del directorio de trabajo (Req 9.1). Si se
+    # pasó ``video_url``, se usa como ``videoSrc`` (URL HTTP que Remotion descarga
+    # durante el render); si no, se cae a la ruta absoluta de ``entrada``.
     props = construir_props(
         entrada,
         grupos,
@@ -440,6 +458,7 @@ def renderizar_con_remotion(
         fps,
         duration_in_frames,
         combine_tokens_ms,
+        video_src=video_url,
     )
     props_path_obj.parent.mkdir(parents=True, exist_ok=True)
     props_path_obj.write_text(
