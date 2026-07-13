@@ -364,6 +364,14 @@ def corregir_grupos_ia(
         # intactos (Req 3.1, 3.2) y sin mutar la entrada (Req 3.4).
         resultado.append(grupo.model_copy(deep=True, update={"texto": texto}))
 
+    # Log informativo de éxito: la IA corrió y emparejó correctamente por índice.
+    # NUNCA se registra la ``api_key`` (Req 5.4, 12.2), solo el recuento y el modelo.
+    logger.info(
+        "Revisión IA: %d grupos corregidos con el modelo %s",
+        len(grupos_lista),
+        ajustes.modelo,
+    )
+
     return resultado
 
 

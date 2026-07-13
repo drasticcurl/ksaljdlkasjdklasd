@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
+from app import config
 from app.engine.ai_review import corregir_grupos_ia
 from app.engine.ffprobe import inspeccionar_clip
 from app.engine.grouping import agrupar
@@ -576,6 +577,15 @@ def renderizar_con_motor_elegido(
                 ajustes.subtitulos.max_palabras,
             )
         )
+        # URL HTTP del vídeo de fondo servida por el backend
+        # (``GET /workfile/{job_id}/{nombre}``): Remotion no puede cargar una ruta
+        # absoluta del disco en ``<OffthreadVideo src>`` (daría 404), así que se
+        # pasa esta URL como ``videoSrc``. La duración la sigue calculando el
+        # motor desde la ruta local ``cortado`` (el backend tiene el archivo).
+        video_url = (
+            f"http://{config.BACKEND_HOST}:{config.BACKEND_PORT}"
+            f"/workfile/{job.job_id}/{Path(cortado_path).name}"
+        )
         return fn_remotion(
             cortado_path,
             grupos_render,
@@ -587,6 +597,7 @@ def renderizar_con_motor_elegido(
             runner=runner,
             existe_salida=existe_salida,
             combine_tokens_ms=ajustes.render.combine_tokens_ms,
+            video_url=video_url,
         )
 
     # motor == "ass": quemado ASS con ffmpeg/libass (comportamiento previo).
