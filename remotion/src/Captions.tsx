@@ -77,6 +77,22 @@ export const Captions: React.FC<CaptionsProps> = ({grupos, estilo}) => {
   // del bloque de subtitulos.
   const topPct = Math.min(Math.max(estilo.posVerticalPct, 0), 100);
 
+  // Peso de la fuente: negrita (700) o normal (400) segun el estilo.
+  const fontWeight = estilo.negrita ? 700 : 400;
+
+  // Borde/outline del texto: solo si grosorBorde > 0. Se dibuja con
+  // WebkitTextStroke y paintOrder 'stroke fill' para que el trazo quede DETRAS
+  // del relleno (evita "comerse" el interior de las letras). `paintOrder` no
+  // esta tipado en todas las versiones de CSSProperties, por eso se castea el
+  // objeto de estilo del borde a React.CSSProperties.
+  const estiloBorde: React.CSSProperties =
+    estilo.grosorBorde > 0
+      ? ({
+          WebkitTextStroke: `${estilo.grosorBorde}px ${estilo.colorBorde}`,
+          paintOrder: 'stroke fill',
+        } as React.CSSProperties)
+      : {};
+
   return (
     <AbsoluteFill>
       <div
@@ -102,7 +118,7 @@ export const Captions: React.FC<CaptionsProps> = ({grupos, estilo}) => {
           textAlign: 'center',
           fontFamily: estilo.fuente,
           fontSize: estilo.tamano,
-          fontWeight: 700,
+          fontWeight,
           lineHeight: 1.2,
           textShadow: '0 2px 8px rgba(0,0,0,0.6)',
         }}
@@ -114,7 +130,11 @@ export const Captions: React.FC<CaptionsProps> = ({grupos, estilo}) => {
           return (
             <React.Fragment key={i}>
               <span
-                style={{color: activa ? estilo.colorResaltado : estilo.color}}
+                style={{
+                  color: activa ? estilo.colorResaltado : estilo.color,
+                  // Borde/outline aplicado por palabra (vacio si grosorBorde <= 0).
+                  ...estiloBorde,
+                }}
               >
                 {palabra.text}
               </span>
