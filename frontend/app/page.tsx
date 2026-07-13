@@ -26,11 +26,14 @@ import TransitionSettings from '@/components/settings/TransitionSettings';
 import RisasSettings from '@/components/settings/RisasSettings';
 import TranscriptionSettings from '@/components/settings/TranscriptionSettings';
 import SubtitleSettings from '@/components/settings/SubtitleSettings';
+import AjustesRevisionIA from '@/components/settings/AjustesRevisionIA';
+import OpenAIKeyInput from '@/components/settings/OpenAIKeyInput';
 import SettingsActions from '@/components/settings/SettingsActions';
 import ProcessButton from '@/components/ProcessButton';
 import ProgressPanel from '@/components/ProgressPanel';
 import ResultPreview from '@/components/ResultPreview';
 import SubtitleReview from '@/components/SubtitleReview';
+import EleccionRender from '@/components/EleccionRender';
 import type { Clip, JobProgress } from '@/lib/types';
 import { AJUSTES_POR_DEFECTO, MUSICA_POR_DEFECTO } from '@/lib/defaults';
 import { obtenerConfiguracion } from '@/lib/api';
@@ -40,6 +43,9 @@ export default function EditorPage() {
   const [ajustes, setAjustes] = useState(AJUSTES_POR_DEFECTO);
   const [musicaId, setMusicaId] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  // Clave de API de OpenAI: transitoria, solo en estado de React (NO se
+  // persiste en localStorage ni en ningún almacenamiento).
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [completado, setCompletado] = useState(false);
   const [progresoActual, setProgresoActual] = useState<JobProgress | null>(null);
 
@@ -165,6 +171,21 @@ export default function EditorPage() {
             onChange={(subtitulos) => setAjustes((p) => ({ ...p, subtitulos }))}
           />
 
+          <AjustesRevisionIA
+            valor={ajustes.revision_ia}
+            onChange={(revision_ia) =>
+              setAjustes((p) => ({ ...p, revision_ia }))
+            }
+          />
+
+          {/* La clave solo se pide cuando la corrección con IA está activada. */}
+          {ajustes.revision_ia.activado && (
+            <OpenAIKeyInput
+              value={openaiApiKey}
+              onChange={setOpenaiApiKey}
+            />
+          )}
+
           <SilenceSettings
             valor={ajustes.silencios}
             onChange={(silencios) => setAjustes((p) => ({ ...p, silencios }))}
@@ -224,6 +245,7 @@ export default function EditorPage() {
           ordenClips={ordenClips}
           ajustes={ajustes}
           musicaId={musicaId}
+          openaiApiKey={openaiApiKey}
           onJobIniciado={manejarJobIniciado}
         />
 
@@ -238,6 +260,12 @@ export default function EditorPage() {
         {/* Revisión manual de subtítulos: aparece cuando el Job se pausa. */}
         {jobId && progresoActual?.estado === 'esperando_revision' && (
           <SubtitleReview jobId={jobId} />
+        )}
+
+        {/* Elección de motor de render: aparece cuando el Job se pausa a la
+            espera de que el usuario elija Remotion o ffmpeg. */}
+        {jobId && progresoActual?.estado === 'esperando_eleccion_render' && (
+          <EleccionRender jobId={jobId} />
         )}
 
         {jobId && completado && <ResultPreview jobId={jobId} />}

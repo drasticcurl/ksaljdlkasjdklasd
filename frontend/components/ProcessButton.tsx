@@ -33,6 +33,12 @@ export interface ProcessButtonProps {
   ajustes: Ajustes;
   /** Id de música opcional; `null` si no se agregó WAV. */
   musicaId: string | null;
+  /**
+   * Clave de API de OpenAI (transitoria, solo estado de React del padre). Se
+   * envía en `POST /procesar` únicamente cuando es una cadena no vacía; nunca
+   * se persiste. Si está vacía o no se pasa, se envía `null`.
+   */
+  openaiApiKey?: string;
   /** Se invoca con el `job_id` cuando el Job se inicia correctamente. */
   onJobIniciado?: (jobId: string) => void;
   /**
@@ -46,6 +52,7 @@ export default function ProcessButton({
   ordenClips,
   ajustes,
   musicaId,
+  openaiApiKey,
   onJobIniciado,
   procesarFn = procesar,
 }: ProcessButtonProps) {
@@ -76,6 +83,10 @@ export default function ProcessButton({
       orden_clips: ordenClips,
       musica_id: musicaId,
       ajustes,
+      // Solo se envía la clave cuando hay una cadena no vacía; en caso
+      // contrario `null` (la clave nunca se persiste).
+      openai_api_key:
+        openaiApiKey && openaiApiKey.trim() !== '' ? openaiApiKey : null,
     };
 
     setEnviando(true);
@@ -93,7 +104,15 @@ export default function ProcessButton({
     } finally {
       setEnviando(false);
     }
-  }, [enviando, ordenClips, ajustes, musicaId, procesarFn, onJobIniciado]);
+  }, [
+    enviando,
+    ordenClips,
+    ajustes,
+    musicaId,
+    openaiApiKey,
+    procesarFn,
+    onJobIniciado,
+  ]);
 
   return (
     <div className="flex flex-col gap-2" data-testid="process-button">
