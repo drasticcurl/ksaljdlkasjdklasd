@@ -1,13 +1,10 @@
-// Contrato de `inputProps` compartido entre el backend Python
-// (backend/app/engine/remotion.py -> construir_props) y la composicion Remotion.
+// COPIA para el navegador de remotion/src/types.ts.
 //
-// IMPORTANTE: la forma de estos tipos debe coincidir EXACTAMENTE con el
-// `props.json` que serializa Python. Cualquier cambio aqui debe reflejarse alla.
-//
-// Nota: ya NO dependemos de `Caption` de @remotion/captions para el render.
-// El backend ahora envia los subtitulos agrupados en `grupos` (frases), cada
-// uno con sus palabras opcionales con timing. El paquete @remotion/captions
-// puede seguir instalado, pero la composicion trabaja con `grupos`.
+// IMPORTANTE: mantener EN SINCRONÍA con `remotion/src/types.ts` del subproyecto
+// Node. Este archivo existe porque @remotion/player renderiza la composición en
+// el navegador (React + hooks de `remotion`) y necesita el mismo contrato de
+// props. Cualquier cambio en el contrato debe reflejarse en ambos lugares y en
+// `backend/app/engine/remotion.py` (construir_props).
 
 /** Una palabra con su timing en milisegundos (para el resaltado karaoke). */
 export type Palabra = {

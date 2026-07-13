@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import ClipUploader from '@/components/ClipUploader';
 import ClipList from '@/components/ClipList';
 import MusicUploader from '@/components/MusicUploader';
@@ -127,14 +128,23 @@ export default function EditorPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-6">
-      <header className="border-b border-editor-border pb-4">
-        <h1 className="text-2xl font-semibold text-white">
-          Editor de Shorts Verticales
-        </h1>
-        <p className="mt-1 text-sm text-gray-400">
-          Une clips, corta silencios, transcribe, subtitula y mezcla música para
-          producir un video vertical 9:16 listo para publicar.
-        </p>
+      <header className="flex items-start justify-between border-b border-editor-border pb-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">
+            Editor de Shorts Verticales
+          </h1>
+          <p className="mt-1 text-sm text-gray-400">
+            Une clips, corta silencios, transcribe, subtitula y mezcla música
+            para producir un video vertical 9:16 listo para publicar.
+          </p>
+        </div>
+        {/* Enlace al banco de pruebas visual de subtítulos (Remotion). */}
+        <Link
+          href="/playground"
+          className="shrink-0 rounded border border-editor-border px-3 py-2 text-sm text-gray-200 hover:bg-editor-panel"
+        >
+          Abrir Playground de subtítulos
+        </Link>
       </header>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -169,12 +179,21 @@ export default function EditorPage() {
           <SubtitleSettings
             valor={ajustes.subtitulos}
             onChange={(subtitulos) => setAjustes((p) => ({ ...p, subtitulos }))}
+            iaActivada={ajustes.revision_ia.activado}
           />
 
           <AjustesRevisionIA
             valor={ajustes.revision_ia}
             onChange={(revision_ia) =>
-              setAjustes((p) => ({ ...p, revision_ia }))
+              setAjustes((p) => ({
+                ...p,
+                revision_ia,
+                // Al activar la IA, se fuerza `revisar=false`: el backend omite
+                // la pausa de revisión manual cuando la IA está activada.
+                subtitulos: revision_ia.activado
+                  ? { ...p.subtitulos, revisar: false }
+                  : p.subtitulos,
+              }))
             }
           />
 

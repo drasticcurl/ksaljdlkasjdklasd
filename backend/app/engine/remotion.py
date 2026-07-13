@@ -217,6 +217,88 @@ def caption_a_dict(caption: Caption) -> Dict[str, object]:
 
 
 # ---------------------------------------------------------------------------
+# Mapeo POR GRUPO (contrato ``grupos`` de props) — arreglo del render "todo
+# pegado" (texto glueado sin espacios)
+# ---------------------------------------------------------------------------
+def _ms_desde_segundos(inicio_s: float, fin_s: float) -> tuple[int, int]:
+    """Convierte un intervalo en segundos a ``(startMs, endMs)`` garantizando orden.
+
+    Aplica el mismo criterio que :func:`_caption_desde_tiempos`: redondea a ms y,
+    si el redondeo invirtiera el intervalo (``endMs < startMs``), fija
+    ``endMs = startMs`` para mantener siempre ``startMs <= endMs``.
+    """
+    start_ms = round(inicio_s * 1000)
+    end_ms = round(fin_s * 1000)
+    if end_ms < start_ms:
+        end_ms = start_ms
+    return start_ms, end_ms
+
+
+def mapear_grupo_a_props_grupo(grupo: GrupoSubtitulo) -> Dict[str, object]:
+    """Mapea un :class:`GrupoSubtitulo` a un dict del contrato ``grupos`` (por grupo).
+
+    A diferencia del mapeo por caption (``createTikTokStyleCaptions``, que pega
+    los tokens y perdía los espacios cuando el grupo no traía ``palabras``), la
+    composición renderiza **por grupo**: recibe el ``text`` completo del grupo y,
+    opcionalmente, sus ``words`` con tiempos individuales para el resaltado.
+
+    Forma devuelta::
+
+        {
+          "text": <grupo.texto>,
+          "startMs": round(inicio_s*1000),
+          "endMs": round(fin_s*1000),   # garantizado endMs >= startMs
+          "words": [ {"text", "startMs", "endMs"}, ... ]  # [] si no hay palabras
+        }
+
+    Reglas:
+
+    * Si ``grupo.palabras`` existe, se emite una entrada por palabra (texto sin
+      espacios extra, ``strip``). Una palabra sin timestamps (``inicio_s``/``fin_s``
+      ``None``) **hereda** los tiempos del grupo.
+    * Si el grupo NO tiene ``palabras``, ``words`` queda como lista **vacía**: la
+      composición dividirá el ``text`` por espacios para mostrar las palabras
+      separadas (sin resaltado individual).
+    * Se garantiza ``startMs <= endMs`` tanto en el grupo como en cada palabra.
+    """
+    inicio_grupo_ms, fin_grupo_ms = _ms_desde_segundos(grupo.inicio_s, grupo.fin_s)
+
+    words: List[Dict[str, object]] = []
+    if grupo.palabras:
+        for palabra in grupo.palabras:
+            # Una palabra sin timestamps válidos hereda los del grupo.
+            inicio = palabra.inicio_s if palabra.inicio_s is not None else grupo.inicio_s
+            fin = palabra.fin_s if palabra.fin_s is not None else grupo.fin_s
+            palabra_inicio_ms, palabra_fin_ms = _ms_desde_segundos(inicio, fin)
+            words.append(
+                {
+                    "text": palabra.texto.strip(),
+                    "startMs": palabra_inicio_ms,
+                    "endMs": palabra_fin_ms,
+                }
+            )
+
+    return {
+        "text": grupo.texto,
+        "startMs": inicio_grupo_ms,
+        "endMs": fin_grupo_ms,
+        "words": words,
+    }
+
+
+def mapear_grupos_a_props_grupos(
+    grupos: Sequence[GrupoSubtitulo],
+) -> List[Dict[str, object]]:
+    """Mapea una secuencia de grupos a la lista del contrato ``grupos`` de props.
+
+    Función **pura**: no muta la entrada ni produce efectos secundarios. Es el
+    origen del nuevo campo ``grupos`` de ``props.json`` que la composición usa
+    para renderizar POR GRUPO (arreglo del texto "todo pegado").
+    """
+    return [mapear_grupo_a_props_grupo(grupo) for grupo in grupos]
+
+
+# ---------------------------------------------------------------------------
 # Estilo y props (contrato Python → Node)
 # ---------------------------------------------------------------------------
 def _estilo_desde_subtitulos(subtitulos: AjustesSubtitulos) -> Dict[str, object]:
@@ -267,6 +349,13 @@ def construir_props(
         El diccionario de props serializable a JSON.
     """
     captions = [caption_a_dict(c) for c in mapear_grupos_a_captions(grupos)]
+    # Nuevo contrato POR GRUPO: la composición renderiza cada grupo con su texto
+    # completo (y, si están, sus palabras con tiempos para el resaltado). Esto
+    # arregla el render "todo pegado": cuando un grupo no traía ``palabras``, el
+    # mapeo por caption emitía un token por grupo sin espacios y
+    # ``createTikTokStyleCaptions`` los concatenaba. Con ``grupos`` la composición
+    # divide el texto por espacios y muestra las palabras separadas.
+    grupos_props = mapear_grupos_a_props_grupos(grupos)
     video_src_final = video_src if video_src is not None else str(Path(entrada).resolve())
     return {
         "videoSrc": video_src_final,
@@ -274,7 +363,10 @@ def construir_props(
         "width": int(resolucion.ancho),
         "height": int(resolucion.alto),
         "durationInFrames": int(duration_in_frames),
+        # ``captions`` se conserva por compatibilidad hacia atrás; el nuevo campo
+        # ``grupos`` es aditivo y es el que consume la composición actualizada.
         "captions": captions,
+        "grupos": grupos_props,
         "estilo": _estilo_desde_subtitulos(subtitulos),
         "combineTokensWithinMs": int(combine_tokens_ms),
     }
@@ -545,6 +637,8 @@ __all__ = [
     "Caption",
     "mapear_grupo_a_captions",
     "mapear_grupos_a_captions",
+    "mapear_grupo_a_props_grupo",
+    "mapear_grupos_a_props_grupos",
     "caption_a_dict",
     "construir_props",
     "comando_render_remotion",
