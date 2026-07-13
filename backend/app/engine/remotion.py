@@ -310,6 +310,10 @@ def _estilo_desde_subtitulos(subtitulos: AjustesSubtitulos) -> Dict[str, object]
         "colorResaltado": subtitulos.color_resaltado,
         "posVerticalPct": subtitulos.pos_vertical_pct,
         "animEntradaMs": subtitulos.anim_entrada_ms,
+        # Borde/outline y negrita del texto (aditivo; el modelo ya los expone).
+        "colorBorde": subtitulos.color_borde,
+        "grosorBorde": subtitulos.grosor_borde,
+        "negrita": subtitulos.negrita,
     }
 
 

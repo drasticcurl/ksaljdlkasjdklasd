@@ -46,6 +46,12 @@ export type Estilo = {
   posVerticalPct: number;
   /** Duracion de la animacion de entrada de cada grupo, en milisegundos. */
   animEntradaMs: number;
+  /** Color del borde/outline del texto en formato #RRGGBB. */
+  colorBorde: string;
+  /** Grosor del borde/outline del texto en pixeles (0 => sin borde). */
+  grosorBorde: number;
+  /** Si el texto se muestra en negrita (700) o normal (400). */
+  negrita: boolean;
 };
 
 /** Propiedades de entrada de la composicion `ShortVideo`. */
