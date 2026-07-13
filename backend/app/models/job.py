@@ -25,6 +25,12 @@ class JobStatus(str, Enum):
     # Estado NO terminal: el pipeline se pausó tras la transcripción y espera que
     # el usuario revise/edite los subtítulos antes de continuar (revisión manual).
     ESPERANDO_REVISION = "esperando_revision"
+    # Estado NO terminal (spec subtitulos-ia-remotion, Req 6.1): el pipeline
+    # preparó los grupos finales (agrupación + corrección IA opcional) y se pausó
+    # SIN renderizar, a la espera de que el usuario elija manualmente el motor de
+    # render (dos botones: "Editar con Remotion" / "ffmpeg"). La reanudación con
+    # el motor elegido se implementa en tareas posteriores (7 y 8).
+    ESPERANDO_ELECCION_RENDER = "esperando_eleccion_render"
     COMPLETADO = "completado"
     FALLIDO = "fallido"
 
@@ -88,5 +94,17 @@ class JobState(BaseModel):
     #     los subtítulos al reanudar la fase 2 del pipeline.
     grupos_subtitulos: Optional[List[GrupoSubtitulo]] = Field(default=None)
     cortado_path: Optional[str] = Field(default=None)
+    # Estado de la elección de motor de render (spec subtitulos-ia-remotion,
+    # Req 6.1). Solo se rellena cuando el Job se pausa en
+    # ESPERANDO_ELECCION_RENDER:
+    #   - ``grupos_finales``: grupos YA definitivos (agrupados + corregidos con IA
+    #     si estaba activada) que se renderizarán con el motor que elija el
+    #     usuario. Se usa un campo DEDICADO (en vez de reutilizar
+    #     ``grupos_subtitulos``) para separar semánticamente la revisión manual
+    #     —grupos editables— de la elección de motor —grupos ya finalizados—, ya
+    #     que un mismo Job puede atravesar ambas pausas de forma consecutiva.
+    #   - ``cortado_path`` (reutilizado): ruta del video sobre el que se
+    #     renderizarán los subtítulos al reanudar con el motor elegido.
+    grupos_finales: Optional[List[GrupoSubtitulo]] = Field(default=None)
     creado_en: datetime = Field(default_factory=_ahora)
     actualizado_en: datetime = Field(default_factory=_ahora)

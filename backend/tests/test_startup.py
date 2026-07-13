@@ -218,27 +218,45 @@ def test_backend_configurado_sobre_loopback_local():
 def test_backend_no_requiere_claves_de_api_para_importarse():
     """Importar la app no exige variables de entorno de claves de API (Req 13.1).
 
-    Se verifica de forma razonable que el código fuente del backend no lee
-    variables de entorno con aspecto de clave de API/token de servicio externo.
+    Se verifica de forma razonable que el código fuente del backend no **lee**
+    variables de entorno con aspecto de clave de API/token de servicio externo,
+    ni las embebe como literal en el código: la operación local no depende de
+    credenciales del entorno.
+
+    Nota (spec subtitulos-ia-remotion, Req 2.1-2.4, 12.1-12.2): la corrección de
+    subtítulos con IA introduce una dependencia externa **opt-in** con OpenAI.
+    Su clave es **transitoria**: llega en el cuerpo de ``POST /procesar`` y se
+    guarda solo en memoria mientras dura el Job; NUNCA se lee de una variable de
+    entorno, ni se hardcodea, ni se persiste. Por eso el guard comprueba que no
+    haya **lecturas de env** con nombre de clave (que romperían el modelo local),
+    en lugar de prohibir toda mención textual del término (que ahora es legítima
+    al nombrar el parámetro transitorio ``openai_api_key``).
     """
     # La importación de la app ya ocurre en otros tests sin API keys definidas;
-    # aquí escaneamos el código fuente en busca de dependencias de claves de API.
-    patron_api_key = re.compile(
-        r"(API_KEY|APIKEY|SECRET_KEY|ACCESS_TOKEN|OPENAI|AWS_SECRET|BEARER_TOKEN)",
+    # aquí escaneamos el código fuente en busca de LECTURAS de variables de
+    # entorno con aspecto de clave de API/token, y de claves embebidas como
+    # literal (p. ej. "sk-..."), que sí violarían la operación 100% local.
+    nombres_clave = r"(API_KEY|APIKEY|SECRET_KEY|ACCESS_TOKEN|OPENAI|AWS_SECRET|BEARER_TOKEN)"
+    # (a) Lectura de una variable de entorno cuyo nombre parece una clave/token.
+    patron_lectura_env = re.compile(
+        r"(os\.environ|os\.getenv|getenv|environ\.get|environ\.setdefault)"
+        r"\s*[\[(]\s*[\"'][^\"']*" + nombres_clave,
         re.IGNORECASE,
     )
+    # (b) Clave de OpenAI embebida como literal (formato "sk-...").
+    patron_clave_hardcodeada = re.compile(r"[\"']sk-[A-Za-z0-9_\-]{16,}[\"']")
 
     app_dir = BACKEND_DIR / "app"
     fuentes = list(app_dir.rglob("*.py")) + [BACKEND_DIR / "main.py"]
     ofensores = []
     for fuente in fuentes:
         texto = fuente.read_text(encoding="utf-8")
-        if patron_api_key.search(texto):
+        if patron_lectura_env.search(texto) or patron_clave_hardcodeada.search(texto):
             ofensores.append(fuente.relative_to(REPO_ROOT).as_posix())
 
     assert not ofensores, (
-        "El backend no debe depender de claves de API/tokens externos; "
-        f"referencias encontradas en: {ofensores}"
+        "El backend no debe leer claves de API/tokens de variables de entorno ni "
+        f"embeberlas en el código; referencias encontradas en: {ofensores}"
     )
 
 

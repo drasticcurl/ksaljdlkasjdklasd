@@ -13,6 +13,7 @@ pydantic>=2               # modelos de dominio y ajustes (v2)
 # --- Herramientas del Motor de Procesamiento ---
 auto-editor               # Paso 2: corte de silencios
 faster-whisper            # Paso 3: transcripción local en CPU con timestamps por palabra
+openai                    # Paso 4b (opt-in): corrección de subtítulos con IA (aislado tras un protocolo inyectable)
 # Nota: ffmpeg/ffprobe son binarios del sistema (instalar con `brew install ffmpeg`).
 
 # --- Testing ---

@@ -20,8 +20,10 @@ import type {
   ConfiguracionResponse,
   GrupoSubtitulo,
   JobProgress,
+  MotorRender,
   ProcesarRequest,
   ProcesarResponse,
+  RenderEleccion,
   SubirClipsResponse,
   SubirMusicaResponse,
   SubtitulosRevision,
@@ -244,17 +246,31 @@ export async function subirMusica(
 // POST /procesar — Iniciar Job (Req 9.5, 10.1)
 // ---------------------------------------------------------------------------
 
-/** Inicia el procesamiento con el orden vigente + ajustes + música opcional. */
+/**
+ * Inicia el procesamiento con el orden vigente + ajustes + música opcional.
+ *
+ * La clave de OpenAI (`openai_api_key`) es **transitoria** (spec
+ * subtitulos-ia-remotion): NO forma parte de `Ajustes` ni se persiste con
+ * {@link guardarConfiguracion}. Solo se incluye en el cuerpo cuando es una
+ * cadena no vacía; si falta o está vacía, se omite del JSON enviado (de modo que
+ * cuando la corrección con IA está desactivada, la clave nunca se transmite).
+ */
 export async function procesar(
   peticion: ProcesarRequest,
   opciones: { baseUrl?: string; timeoutMs?: number } = {},
 ): Promise<ProcesarResponse> {
+  const { openai_api_key, ...resto } = peticion;
+  const cuerpo: Record<string, unknown> = { ...resto };
+  if (typeof openai_api_key === 'string' && openai_api_key.length > 0) {
+    cuerpo.openai_api_key = openai_api_key;
+  }
+
   const res = await fetchConTimeout(
     buildUrl('/procesar', opciones.baseUrl),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(peticion),
+      body: JSON.stringify(cuerpo),
     },
     opciones.timeoutMs,
   );
@@ -308,6 +324,47 @@ export async function enviarSubtitulos(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ grupos: grupos.map((g) => ({ texto: g.texto })) }),
+    },
+  );
+  return parseJsonOrThrow<ProcesarResponse>(res);
+}
+
+// ---------------------------------------------------------------------------
+// GET/POST /render/{id} — Elección manual del motor de render
+// (spec subtitulos-ia-remotion, Req 6.2, 6.3, 7.1, 7.2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Obtiene los subtítulos ya corregidos (solo lectura) y la preselección de
+ * motor de un Job en estado `esperando_eleccion_render`, para que el usuario
+ * revise el texto antes de elegir el motor de render.
+ */
+export async function obtenerRender(
+  jobId: string,
+  opciones: { baseUrl?: string; signal?: AbortSignal } = {},
+): Promise<RenderEleccion> {
+  const res = await fetchConTimeout(
+    buildUrl(`/render/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    { method: 'GET', signal: opciones.signal },
+  );
+  return parseJsonOrThrow<RenderEleccion>(res);
+}
+
+/**
+ * Elige el motor de render (`ass` o `remotion`) y reanuda el pipeline. Ejecuta
+ * exactamente el motor elegido (sin fallback automático).
+ */
+export async function elegirRender(
+  jobId: string,
+  motor: MotorRender,
+  opciones: { baseUrl?: string } = {},
+): Promise<ProcesarResponse> {
+  const res = await fetchConTimeout(
+    buildUrl(`/render/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ motor }),
     },
   );
   return parseJsonOrThrow<ProcesarResponse>(res);
