@@ -130,6 +130,11 @@
         "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
         "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
         "timestamp": 1784038761685
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784040383986
       }
     ],
     "5.2 Mantener el contrato de solo texto en `backend/app/api/subtitles.py`": [
@@ -142,6 +147,11 @@
         "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
         "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
         "timestamp": 1784038762693
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784040385950
       }
     ],
     "5.3 Ampliar `backend/app/api/render.py`": [
@@ -154,6 +164,11 @@
         "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
         "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
         "timestamp": 1784038763696
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784040386986
       }
     ],
     "5.4 Registrar router y servir el vídeo unido en `backend/main.py`": [
@@ -161,6 +176,11 @@
         "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
         "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
         "timestamp": 1784035361313
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784040393210
       }
     ],
     "6. Punto de control del backend": [

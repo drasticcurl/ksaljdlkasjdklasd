@@ -60,6 +60,7 @@ from app.api import process as process_router  # noqa: E402
 from app.api import progress as progress_router  # noqa: E402
 from app.api import render as render_router  # noqa: E402
 from app.api import settings_config as settings_config_router  # noqa: E402
+from app.api import silencios as silencios_router  # noqa: E402
 from app.api import subtitles as subtitles_router  # noqa: E402
 from app.deps import DependenciasFaltantesError, verificar_dependencias  # noqa: E402
 
@@ -199,6 +200,12 @@ app.include_router(download_router.router)
 app.include_router(subtitles_router.router)
 app.include_router(render_router.router)
 app.include_router(settings_config_router.router)
+
+# Edición manual de silencios (spec edicion-avanzada-shorts, tarea 5.4, Req 2.6,
+# 14.1, 14.5): GET/POST /silencios/{job_id}. El timeline usa el vídeo unido
+# servido por GET /workfile/{job_id}/{nombre} (que ya sirve unido.mp4 y
+# cortado.mp4 por nombre desde el workdir del Job).
+app.include_router(silencios_router.router)
 
 
 @app.get("/salud")

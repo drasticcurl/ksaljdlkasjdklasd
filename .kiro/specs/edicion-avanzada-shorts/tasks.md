@@ -81,19 +81,19 @@ Lenguajes fijados por el diseño: **Python** (backend, `pytest` + `hypothesis`) 
     - _Requisitos: 16.1, 16.2, 16.4, 16.6_
 
 - [ ] 5. Endpoints de API y registro de routers
-  - [-] 5.1 Crear el router `backend/app/api/silencios.py`
+  - [x] 5.1 Crear el router `backend/app/api/silencios.py`
     - `GET /silencios/{job_id}`: devolver tramos (ordenados, sin solapes), `duracion_s`, `video_url`/`video_nombre` del vídeo unido, `fps`/`ancho`/`alto`, `editable` según estado; `404 JOB_NOT_FOUND` si no existe.
     - `POST /silencios/{job_id}`: validar con `validar_tramos_silencio`, reanudar (`202`, `EN_EJECUCION`); `404`/`409 CONFLICT`/`400 INVALID_REQUEST` según §5.2.
     - _Requisitos: 2.1, 2.2, 2.3, 2.4, 5.1, 5.2, 5.3, 5.4, 14.2, 14.3, 14.4, 14.5_
-  - [-] 5.2 Mantener el contrato de solo texto en `backend/app/api/subtitles.py`
+  - [x] 5.2 Mantener el contrato de solo texto en `backend/app/api/subtitles.py`
     - `GET /subtitulos/{job_id}`: devolver grupos con texto + tiempos informativos y `editable` según estado.
     - `POST /subtitulos/{job_id}`: aceptar sólo texto confirmado; validar que la cantidad de grupos coincide y ningún texto queda vacío tras `trim`; conservar tiempos por palabra sin recalcular karaoke; `202`/`400`/`409` según §5.4.
     - _Requisitos: 6.2, 6.3, 6.4, 6.5, 7.1, 7.2, 7.3, 7.4, 7.5, 14.2, 14.3, 14.4_
-  - [-] 5.3 Ampliar `backend/app/api/render.py`
+  - [x] 5.3 Ampliar `backend/app/api/render.py`
     - `GET /render/{job_id}`: añadir `textos_extra` (últimos o `[]`) y datos del vídeo cortado (duración, ancho, alto); `editable = true` en `ESPERANDO_EDICION_FINAL`.
     - `POST /render/{job_id}`: aceptar `textos_extra` (máx 2, validados con `validar_texto_extra`), `motor` opcional que sólo acepta `"remotion"` (por defecto `"remotion"`), persistir y reanudar siempre con Remotion; `202`/`400`/`409` según §5.6.
     - _Requisitos: 8.2, 10.1, 10.5, 11.2, 11.3, 11.4, 11.5, 14.3, 14.4, 15.3, 15.4, 15.5_
-  - [~] 5.4 Registrar router y servir el vídeo unido en `backend/main.py`
+  - [-] 5.4 Registrar router y servir el vídeo unido en `backend/main.py`
     - Registrar el router `silencios`; garantizar que `GET /workfile/{job_id}/{nombre}` sirve `unido.mp4` (y `cortado.mp4`) por HTTP; envoltura de error homogénea en todos los endpoints.
     - _Requisitos: 2.6, 14.1, 14.5_
   - [ ]* 5.5 Escribir pruebas de los endpoints (pytest)
