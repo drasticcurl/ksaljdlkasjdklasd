@@ -104,3 +104,31 @@ existente:
   11.1 (integración del pipeline con pausas) → 11.2 (verificación
   frontend/Remotion + sincronía de copias) → checkpoint 6 (suite backend, HECHO)
   → checkpoint final 12 (verificación conjunta final).
+
+
+## Fix de producción — `GET /silencios/{id}` 500 (tuplas vs `TramoSilencio`)
+
+- **Síntoma**: `GET /silencios/{job_id}` devolvía **500** con el Job en
+  `ESPERANDO_EDICION_SILENCIOS`: `AttributeError: 'tuple' object has no attribute
+  'model_dump'` en `app/api/silencios.py: construir_respuesta_silencios`.
+- **Causa raíz**: `detectar_silencios` entrega los silencios como
+  `List[Tuple[float, float]]`; el pipeline/runner los propagan tal cual y
+  `manager.marcar_esperando_edicion_silencios` los guardaba con
+  `list(silencios)`. Como Pydantic v2 **no coacciona en asignación por atributo**,
+  `JobState.silencios_detectados` quedaba con TUPLAS (no `TramoSilencio`), y el
+  endpoint petaba al llamar `t.model_dump()`.
+- **Arreglo**:
+  1. **Raíz** — `app/jobs/manager.py`: `marcar_esperando_edicion_silencios`
+     coacciona cada elemento a `TramoSilencio` (helper `_coaccionar_tramo_silencio`,
+     idempotente: acepta tuplas/listas y `TramoSilencio` ya construidos).
+  2. **Defensivo** — `app/api/silencios.py`: `construir_respuesta_silencios`
+     serializa los tramos con `_serializar_tramo` (usa `model_dump` si existe; si
+     es tupla/lista emite `{"inicio_s", "fin_s"}`), manteniendo el contrato.
+- **Regresión** — `tests/test_endpoints_edicion_avanzada.py`: nuevos tests con la
+  forma REAL del pipeline (TUPLAS) que fallaban antes y pasan ahora
+  (`test_get_silencios_con_tuplas_del_pipeline_no_rompe_200`,
+  `test_marcar_esperando_edicion_silencios_coacciona_tuplas_a_tramosilencio`,
+  `test_marcar_esperando_edicion_silencios_idempotente_con_tramosilencio`). El
+  fixture previo `_job_en_edicion_silencios` usaba `TramoSilencio`, por eso no
+  cazaba el bug; se añadió la variante con tuplas sin quitar la existente.
+- **Verificación**: `pytest tests/ -q` → **334 passed**.

@@ -274,6 +274,89 @@ def test_get_silencios_job_inexistente_404() -> None:
     assert resp.json()["error"]["code"] == "JOB_NOT_FOUND"
 
 
+# ---------------------------------------------------------------------------
+# REGRESIÓN (bug de producción): el pipeline entrega los silencios como TUPLAS
+# ``(inicio_s, fin_s)`` (no como ``TramoSilencio``). El runner real llama a
+# ``marcar_esperando_edicion_silencios`` con esas tuplas y ``GET /silencios``
+# rompía con ``AttributeError: 'tuple' object has no attribute 'model_dump'``.
+# El fixture ``_job_en_edicion_silencios`` usaba ``TramoSilencio``, por eso NO
+# cazaba el bug; aquí reproducimos la FORMA REAL del pipeline con tuplas.
+# ---------------------------------------------------------------------------
+def _job_en_edicion_silencios_tuplas(
+    manager: JobManager,
+    job_id: str,
+    *,
+    silencios: list,
+    duracion: float = 15.0,
+    ajustes: Optional[Ajustes] = None,
+) -> None:
+    """Pausa un Job en ``ESPERANDO_EDICION_SILENCIOS`` pasando TUPLAS de silencio.
+
+    Reproduce exactamente cómo el runner real invoca al Gestor: los tramos vienen
+    del pipeline como ``List[Tuple[float, float]]`` (no como ``TramoSilencio``).
+    """
+    manager.crear_job(job_id, ["a"], ajustes or Ajustes(), workdir="wd")
+    manager.marcar_esperando_edicion_silencios(
+        job_id, "/tmp/wd/unido.mp4", silencios, duracion
+    )
+
+
+def test_get_silencios_con_tuplas_del_pipeline_no_rompe_200() -> None:
+    """REGRESIÓN: con tramos-tupla (forma real del pipeline) ``GET /silencios``
+    responde ``200`` y serializa ``tramos`` como ``{inicio_s, fin_s}`` (bug #21).
+
+    Antes del arreglo esto lanzaba ``AttributeError`` (500) porque
+    ``silencios_detectados`` quedaban como tuplas y ``t.model_dump()`` fallaba.
+    """
+    manager = JobManager()
+    _job_en_edicion_silencios_tuplas(
+        manager, "job-sil-tuplas", silencios=[(1.0, 2.0), (5.0, 6.5)], duracion=15.0
+    )
+
+    with _cliente(manager) as (client, _runner):
+        resp = client.get("/silencios/job-sil-tuplas")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["editable"] is True
+    assert body["tramos"] == [
+        {"inicio_s": 1.0, "fin_s": 2.0},
+        {"inicio_s": 5.0, "fin_s": 6.5},
+    ]
+
+
+def test_marcar_esperando_edicion_silencios_coacciona_tuplas_a_tramosilencio() -> None:
+    """REGRESIÓN (unitario del Gestor): tras pasar TUPLAS, ``silencios_detectados``
+    queda como ``List[TramoSilencio]`` (cumple el tipo declarado del ``JobState``).
+    """
+    manager = JobManager()
+    manager.crear_job("job-coacc", ["a"], Ajustes(), workdir="wd")
+    manager.marcar_esperando_edicion_silencios(
+        "job-coacc", "/tmp/wd/unido.mp4", [(1.0, 2.0), (5.0, 6.5)], 15.0
+    )
+
+    detectados = manager.obtener("job-coacc").silencios_detectados
+    assert detectados is not None
+    assert all(isinstance(t, TramoSilencio) for t in detectados)
+    assert [(t.inicio_s, t.fin_s) for t in detectados] == [(1.0, 2.0), (5.0, 6.5)]
+
+
+def test_marcar_esperando_edicion_silencios_idempotente_con_tramosilencio() -> None:
+    """La coacción es idempotente: pasar ``TramoSilencio`` ya construidos también
+    deja ``silencios_detectados`` como ``List[TramoSilencio]`` intacto."""
+    manager = JobManager()
+    manager.crear_job("job-idemp", ["a"], Ajustes(), workdir="wd")
+    tramos = [TramoSilencio(inicio_s=1.0, fin_s=2.0)]
+    manager.marcar_esperando_edicion_silencios(
+        "job-idemp", "/tmp/wd/unido.mp4", tramos, 15.0
+    )
+
+    detectados = manager.obtener("job-idemp").silencios_detectados
+    assert detectados is not None
+    assert all(isinstance(t, TramoSilencio) for t in detectados)
+    assert [(t.inicio_s, t.fin_s) for t in detectados] == [(1.0, 2.0)]
+
+
 # ===========================================================================
 # POST /silencios/{id} (Req 5.1-5.4, 15.1, 15.2)
 # ===========================================================================
