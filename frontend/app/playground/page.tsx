@@ -29,7 +29,7 @@ import type {
   Palabra,
   ShortVideoProps,
 } from '@/components/remotion/types';
-import { FUENTES_DISPONIBLES } from '@/components/settings/ranges';
+import EstiloSubtitulos from '@/components/EstiloSubtitulos';
 import { AJUSTES_POR_DEFECTO } from '@/lib/defaults';
 import { obtenerConfiguracion, guardarConfiguracion } from '@/lib/api';
 
@@ -167,11 +167,6 @@ export default function PlaygroundPage() {
     [durationInFrames, estilo, grupos],
   );
 
-  /** Actualiza un campo del estilo de forma inmutable. */
-  function actualizarEstilo<K extends keyof Estilo>(campo: K, valor: Estilo[K]) {
-    setEstilo((prev) => ({ ...prev, [campo]: valor }));
-  }
-
   /**
    * Guarda el estilo actual en la configuración del backend: carga la config
    * vigente (o parte de AJUSTES_POR_DEFECTO si no hay), aplica los campos de
@@ -296,136 +291,14 @@ export default function PlaygroundPage() {
 
           <h2 className="mt-2 text-lg font-medium text-white">Estilo</h2>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm text-gray-300">
-              <span>Color del texto</span>
-              <input
-                type="color"
-                data-testid="estilo-color"
-                value={estilo.color}
-                onChange={(e) => actualizarEstilo('color', e.target.value)}
-                className="h-8 w-16 rounded border border-gray-600 bg-gray-800"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1 text-sm text-gray-300">
-              <span>Color de resaltado</span>
-              <input
-                type="color"
-                data-testid="estilo-color-resaltado"
-                value={estilo.colorResaltado}
-                onChange={(e) =>
-                  actualizarEstilo('colorResaltado', e.target.value)
-                }
-                className="h-8 w-16 rounded border border-gray-600 bg-gray-800"
-              />
-            </label>
-          </div>
-
-          <label className="flex flex-col gap-1 text-sm text-gray-300">
-            <span>Tamaño: {estilo.tamano}px</span>
-            <input
-              type="range"
-              min={12}
-              max={200}
-              step={1}
-              data-testid="estilo-tamano"
-              value={estilo.tamano}
-              onChange={(e) =>
-                actualizarEstilo('tamano', Number(e.target.value))
-              }
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm text-gray-300">
-            <span>Fuente</span>
-            <select
-              data-testid="estilo-fuente"
-              value={estilo.fuente}
-              onChange={(e) => actualizarEstilo('fuente', e.target.value)}
-              className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-white"
-            >
-              {FUENTES_DISPONIBLES.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm text-gray-300">
-            <span>Posición vertical: {estilo.posVerticalPct}%</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              data-testid="estilo-pos-vertical"
-              value={estilo.posVerticalPct}
-              onChange={(e) =>
-                actualizarEstilo('posVerticalPct', Number(e.target.value))
-              }
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm text-gray-300">
-            <span>Animación de entrada: {estilo.animEntradaMs}ms</span>
-            <input
-              type="range"
-              min={0}
-              max={2000}
-              step={50}
-              data-testid="estilo-anim-entrada"
-              value={estilo.animEntradaMs}
-              onChange={(e) =>
-                actualizarEstilo('animEntradaMs', Number(e.target.value))
-              }
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm text-gray-300">
-              <span>Color de borde</span>
-              <input
-                type="color"
-                data-testid="estilo-color-borde"
-                value={estilo.colorBorde}
-                onChange={(e) =>
-                  actualizarEstilo('colorBorde', e.target.value)
-                }
-                className="h-8 w-16 rounded border border-gray-600 bg-gray-800"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1 text-sm text-gray-300">
-              <span>
-                Grosor de borde: {estilo.grosorBorde}px
-                {estilo.grosorBorde === 0 ? ' (sin borde)' : ''}
-              </span>
-              <input
-                type="range"
-                min={0}
-                max={20}
-                step={1}
-                data-testid="estilo-grosor-borde"
-                value={estilo.grosorBorde}
-                onChange={(e) =>
-                  actualizarEstilo('grosorBorde', Number(e.target.value))
-                }
-              />
-            </label>
-          </div>
-
-          <label className="flex items-center gap-2 text-sm text-gray-300">
-            <input
-              type="checkbox"
-              data-testid="estilo-negrita"
-              checked={estilo.negrita}
-              onChange={(e) => actualizarEstilo('negrita', e.target.checked)}
-              className="h-4 w-4 rounded border border-gray-600 bg-gray-800"
-            />
-            <span>Negrita</span>
-          </label>
+          {/*
+            Controles de estilo reutilizables (extraídos a `EstiloSubtitulos`
+            en la tarea 4.1). El playground los consume como componente
+            controlado: le pasa el `estilo` actual y actualiza el estado con
+            `setEstilo` en cada cambio, eliminando la duplicación de JSX sin
+            alterar el comportamiento visible ni los `data-testid`.
+          */}
+          <EstiloSubtitulos estilo={estilo} onChange={setEstilo} />
 
           <div className="mt-2 flex items-center gap-3 border-t border-editor-border pt-3">
             <button

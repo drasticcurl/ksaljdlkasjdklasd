@@ -6,9 +6,9 @@
  * property-based (fast-check) para verificar invariantes de la unión de rutas.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fc from 'fast-check';
-import { buildUrl, urlDescarga } from '../api';
+import { buildUrl, elegirRender, urlDescarga } from '../api';
 
 describe('buildUrl', () => {
   it('une base y ruta con una sola barra', () => {
@@ -48,5 +48,47 @@ describe('urlDescarga', () => {
     expect(urlDescarga('job_abc', 'http://localhost:8000')).toBe(
       'http://localhost:8000/descargar/job_abc',
     );
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// elegirRender — confirmación del motor (spec previsualizacion-video-real-remotion)
+// ---------------------------------------------------------------------------
+
+describe('elegirRender', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('confirma el render de Remotion con POST /render/{id} y cuerpo { motor: "remotion" }', async () => {
+    // Mock de fetch que devuelve una respuesta 202 válida del backend.
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ job_id: 'job_1', estado: 'en_ejecucion' }), {
+          status: 202,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const resultado = await elegirRender('job_1', 'remotion', {
+      baseUrl: 'http://localhost:8000',
+    });
+
+    // Se llamó exactamente una vez con la URL y el método correctos.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe('http://localhost:8000/render/job_1');
+    expect(init.method).toBe('POST');
+
+    // El cuerpo enviado es exactamente { motor: "remotion" }.
+    expect(JSON.parse(init.body as string)).toEqual({ motor: 'remotion' });
+
+    // Se devuelve la respuesta parseada del backend.
+    expect(resultado).toEqual({ job_id: 'job_1', estado: 'en_ejecucion' });
   });
 });
