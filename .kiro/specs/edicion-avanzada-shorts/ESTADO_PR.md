@@ -1,8 +1,10 @@
 # Estado del PR #21 — edicion-avanzada-shorts
 
 > Rama: `feature/edicion-avanzada-shorts-tarea-4-4` → `main`. Este documento resume
-> el estado actual de la feature para la revisión del PR. Actualizado tras la
-> **tarea 5.4** (registro del router de silencios).
+> el estado actual de la feature para la revisión del PR. Actualizado tras el
+> **punto de control del backend (tarea 6)**: pruebas de endpoints (5.5) e
+> integración del pipeline con pausas (11.1), verificación frontend/Remotion
+> (11.2) y arreglo de la PBT P5 con valores subnormales.
 
 ## Qué hace la feature (resumen breve)
 
@@ -52,19 +54,35 @@ existente:
   P9 (retrocompatibilidad de `ShortVideoProps`), P7 (mapeo coherente), además de
   tests de `silence`, transiciones/pausas (tarea 4.4), api del frontend,
   `TimelineSilencios` y `TextosExtra`.
-- **Suites** (al momento de 4.4): frontend en verde (~214 tests) y backend en
-  verde (~299 tests).
+- **Pruebas de endpoints (tarea 5.5)**: `test_endpoints_edicion_avanzada.py`
+  cubre los códigos `200/202/400/404/409` de `/silencios`, `/subtitulos` y
+  `/render`, incluidos los límites de validación (tramos, textos extra, motor).
+- **Integración del pipeline con pausas (tarea 11.1)**:
+  `test_integracion_edicion_avanzada.py` recorre el flujo completo
+  detección → pausa silencios → corte → transcripción → subtítulos → revisión →
+  edición final → render Remotion, reutilizando artefactos y conservando el
+  workdir. Se apoya en el cambio ADITIVO de `pipeline.py`
+  (`ejecutar_pipeline(**_inyecciones_ignoradas)`) para reenviar un único conjunto
+  de inyecciones a lo largo de todo el flujo con pausas.
+- **Verificación frontend/Remotion (tarea 11.2)**: `vitest` + `tsc --noEmit` y
+  sincronía de las dos copias de la composición confirmadas.
+- **Arreglo PBT P5 (subnormales)**: en `test_silence_complemento_pbt.py` se
+  acotaron las estrategias de `hypothesis` con `allow_subnormal=False`. El fallo
+  era una fragilidad del ORÁCULO del test (el punto medio `(a+b)/2` sufría
+  *underflow* a un extremo con complementos de anchura subnormal, p. ej.
+  `[(5e-324, 1.0)]` con `duracion=1.0`), NO un bug de
+  `segmentos_conservar_desde_borrado`, que calcula el complemento correctamente.
+  Se mantienen intactas P5a–P5d en todo el rango normal.
+- **Punto de control del backend (tarea 6): COMPLETO** — suite backend en verde
+  (**331 tests**) y suite frontend en verde (~214 tests).
 
 ## Lo que falta (pendiente)
 
-- **Tarea 5.5**: pruebas pytest de los endpoints `/silencios`, `/subtitulos`,
-  `/render` (códigos 200/202/400/404/409 y límites de validación).
-- **Tarea 11.1**: pruebas de integración del pipeline extremo a extremo con las
-  pausas.
-- **Tarea 11.2**: suite de verificación frontend/Remotion (`vitest` +
-  `tsc --noEmit`) y confirmación de la sincronía de las dos copias de la
-  composición.
-- **Puntos de control 6 y 12**: correr toda la suite (backend + frontend).
+- **Punto de control final (tarea 12)**: verificación conjunta final de ambas
+  suites (backend + frontend) antes de dar por cerrada la feature.
+
+> Las tareas 5.5, 11.1 y 11.2, y el punto de control del backend (tarea 6), están
+> **completas** (ver sección anterior).
 
 > **Nota de diseño para retomar**: conviene que
 > `app/engine/pipeline.py: ejecutar_pipeline` acepte e ignore inyecciones extra
@@ -82,6 +100,7 @@ existente:
   textos extra tipo hook y un estilo rico sobre el vídeo, algo que se expresa de
   forma aditiva en las props de `ShortVideo`; mantener un único motor evita
   divergencias de resultado y simplifica el contrato.
-- **Cómo continuar**: registrar el router (hecho en 5.4) → 5.5 (pruebas de
-  endpoints) → 11.1 (integración del pipeline con pausas) → 11.2 (verificación
-  frontend/Remotion + sincronía de copias) → checkpoints 6 y 12 (suite completa).
+- **Cómo continuar**: registrar el router (5.4) → 5.5 (pruebas de endpoints) →
+  11.1 (integración del pipeline con pausas) → 11.2 (verificación
+  frontend/Remotion + sincronía de copias) → checkpoint 6 (suite backend, HECHO)
+  → checkpoint final 12 (verificación conjunta final).

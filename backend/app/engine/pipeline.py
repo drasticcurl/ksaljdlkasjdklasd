@@ -246,6 +246,7 @@ def ejecutar_pipeline(
     fn_subtitulos: Callable[..., Path] = generar_y_quemar_subtitulos,
     fn_musica: Callable[..., Path] = mezclar_musica,
     fn_preservar: Callable[[JobWorkdir, Any], Path] = preservar_video_final,
+    **_inyecciones_ignoradas: Any,
 ) -> ResultadoPipeline:
     """Ejecuta los cinco pasos del pipeline en orden estricto (Req 3-8, 10.5, 10.7).
 
@@ -274,6 +275,15 @@ def ejecutar_pipeline(
             es la detección de silencios de la FASE A (Req 1.1); ``fn_cortar`` se
             conserva por compatibilidad de firma pero ya no se usa en este flujo
             (el corte se aplica al reanudar, en :func:`reanudar_desde_silencios`).
+        **_inyecciones_ignoradas: Inyecciones adicionales de pasos POSTERIORES a
+            la pausa (p. ej. ``fn_aplicar`` de la FASE B o ``fn_remotion`` del
+            render) que esta fase inicial **ignora**. Es un cambio ADITIVO y
+            seguro —coherente con :func:`reanudar_desde_silencios` y
+            :func:`reanudar_pipeline`, que ya aceptan e ignoran inyecciones extra—
+            que permite reenviar UN ÚNICO conjunto de inyecciones desde el Gestor
+            de Jobs (un solo :class:`~app.jobs.runner.JobRunner`) a lo largo de
+            todo el flujo con pausas sin error. No altera ningún comportamiento de
+            producción.
 
     Returns:
         :class:`ResultadoPipeline` con el resultado global. Puede señalizar la

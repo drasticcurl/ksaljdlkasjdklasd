@@ -113,9 +113,29 @@ def _caso_tramos_duracion(draw: st.DrawFn) -> Tuple[List[Tramo], float]:
     rango (que deben recortarse) y "borrar todo" (D-VACIO). Los extremos se
     extraen deliberadamente por debajo de 0 y por encima de ``duracion`` para
     ejercitar el clamp.
+
+    Nota sobre ``allow_subnormal=False`` (justificación): TODAS las estrategias de
+    ``floats`` de este generador excluyen los flotantes SUBNORMALES (los del rango
+    de "underflow", magnitudes ~5e-324..2.2e-308). No son representativos de
+    duraciones/tramos de vídeo reales (segundos) y, sobre todo, ROMPEN EL ORÁCULO
+    de referencia de esta PBT, no la función de producción: cuando un tramo a
+    borrar deja un complemento de anchura subnormal (p. ej. ``[(5e-324, 1.0)]`` con
+    ``duracion=1.0`` deja el complemento ``(0.0, 5e-324)``), el punto medio
+    ``(a+b)/2`` sufre *underflow* a un extremo (``5e-324/2 == 0.0``) y el muestreo
+    de interior estricto deja de discriminar "borrado" vs "conservado". La función
+    ``segmentos_conservar_desde_borrado`` calcula ese complemento de forma correcta;
+    el fallo es una fragilidad del muestreo, no un bug. Excluir los subnormales
+    elimina únicamente esos casos degenerados no representables, manteniendo intactas
+    P5a–P5d para todo el rango normal (incluidos negativos, clamp y solapes).
     """
     duracion = draw(
-        st.floats(min_value=0.1, max_value=3600.0, allow_nan=False, allow_infinity=False)
+        st.floats(
+            min_value=0.1,
+            max_value=3600.0,
+            allow_nan=False,
+            allow_infinity=False,
+            allow_subnormal=False,
+        )
     )
     modo = draw(
         st.sampled_from(["vacio", "normal", "solapados", "fuera_rango", "cubre_todo"])
@@ -134,6 +154,7 @@ def _caso_tramos_duracion(draw: st.DrawFn) -> Tuple[List[Tramo], float]:
         max_value=duracion + 50.0,
         allow_nan=False,
         allow_infinity=False,
+        allow_subnormal=False,
     )
 
     if modo == "solapados":
@@ -144,10 +165,22 @@ def _caso_tramos_duracion(draw: st.DrawFn) -> Tuple[List[Tramo], float]:
         cursor = base
         for _ in range(n):
             inicio = cursor - draw(
-                st.floats(min_value=0.0, max_value=5.0, allow_nan=False, allow_infinity=False)
+                st.floats(
+                    min_value=0.0,
+                    max_value=5.0,
+                    allow_nan=False,
+                    allow_infinity=False,
+                    allow_subnormal=False,
+                )
             )
             longitud = draw(
-                st.floats(min_value=0.0, max_value=20.0, allow_nan=False, allow_infinity=False)
+                st.floats(
+                    min_value=0.0,
+                    max_value=20.0,
+                    allow_nan=False,
+                    allow_infinity=False,
+                    allow_subnormal=False,
+                )
             )
             tramos.append((inicio, inicio + longitud))
             cursor = inicio + longitud
@@ -159,7 +192,13 @@ def _caso_tramos_duracion(draw: st.DrawFn) -> Tuple[List[Tramo], float]:
     for _ in range(n):
         inicio = draw(extremo)
         longitud = draw(
-            st.floats(min_value=0.0, max_value=duracion + 60.0, allow_nan=False, allow_infinity=False)
+            st.floats(
+                min_value=0.0,
+                max_value=duracion + 60.0,
+                allow_nan=False,
+                allow_infinity=False,
+                allow_subnormal=False,
+            )
         )
         tramos.append((inicio, inicio + longitud))
     return tramos, duracion
