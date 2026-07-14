@@ -51,6 +51,9 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
     max_palabras: 4,
     // Revisión manual desactivada por defecto (el pipeline corre completo).
     revisar: false,
+    // "Aprobar subtítulos a mano" desactivado por defecto. Si se activa, el
+    // pipeline pausa para revisar/corregir a mano (incluida la salida de la IA).
+    aprobar_a_mano: false,
     // Texto en minúscula desactivado por defecto (se conserva la transcripción).
     minusculas: false,
     // Estilo por defecto: karaoke bold (resalta la palabra activa).
@@ -80,7 +83,7 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   // es transitoria y viaja aparte en POST /procesar (spec subtitulos-ia-remotion).
   revision_ia: {
     activado: false,
-    modelo: 'gpt-4.1-mini',
+    modelo: 'gpt-5.4-nano',
     timeout_s: 20,
     max_reintentos: 1,
   },

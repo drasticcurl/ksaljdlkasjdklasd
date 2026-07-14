@@ -276,8 +276,9 @@ export default function SubtitleSettings({
         <span>Todo el texto en minúscula</span>
       </label>
 
-      {/* La revisión manual solo tiene sentido si la IA está desactivada: el
-          backend omite esa pausa cuando `revision_ia.activado` es true. */}
+      {/* La revisión manual clásica (`revisar`) solo tiene sentido si la IA
+          está desactivada: el backend omite esa pausa cuando
+          `revision_ia.activado` es true. */}
       {iaActivada ? (
         <p
           data-testid="revisar-ia-nota"
@@ -297,6 +298,27 @@ export default function SubtitleSettings({
           <span>Revisar y editar el texto antes de quemar los subtítulos</span>
         </label>
       )}
+
+      {/* "Aprobar subtítulos a mano": pausa SIEMPRE para revisar/corregir a mano,
+          incluso con la IA activada (a diferencia de `revisar`). Cuando la IA
+          está encendida, muestra la salida de la IA para poder ajustarla. */}
+      <label className="flex flex-col gap-1 text-sm text-gray-300">
+        <span className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={valor.aprobar_a_mano}
+            data-testid="campo-subtitulos.aprobar_a_mano"
+            onChange={(e) =>
+              onChange({ ...valor, aprobar_a_mano: e.target.checked })
+            }
+          />
+          <span>Aprobar subtítulos a mano</span>
+        </span>
+        <span className="pl-6 text-xs text-gray-400">
+          Pausa para que revises y corrijas el texto —incluida la corrección de
+          la IA— antes de renderizar.
+        </span>
+      </label>
 
       <NumberField
         etiqueta="Animación de entrada"

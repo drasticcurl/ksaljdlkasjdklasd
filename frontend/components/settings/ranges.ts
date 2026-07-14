@@ -139,6 +139,7 @@ export const MODOS_SILENCIO: ReadonlyArray<{ valor: string; etiqueta: string }> 
 
 /** Modelos de OpenAI admitidos para la corrección de subtítulos (Req 11.1). */
 export const SUPPORTED_OPENAI_MODELS: readonly string[] = [
+  'gpt-5.4-nano',
   'gpt-4.1-mini',
   'gpt-4.1',
   'gpt-4.1-nano',
@@ -146,7 +147,7 @@ export const SUPPORTED_OPENAI_MODELS: readonly string[] = [
 ];
 
 /** Modelo de OpenAI por defecto de la corrección con IA. */
-export const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini';
+export const DEFAULT_OPENAI_MODEL = 'gpt-5.4-nano';
 
 /** Indica si `modelo` pertenece a los modelos de OpenAI admitidos (Req 11.1). */
 export function modeloOpenAIValido(modelo: string): boolean {

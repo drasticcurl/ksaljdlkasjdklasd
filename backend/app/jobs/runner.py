@@ -251,8 +251,10 @@ class JobRunner:
         Reanuda un Job pausado en ``ESPERANDO_REVISION`` (revisión manual de
         subtítulos): toma los ``grupos`` de subtítulo ya editados por el usuario y
         prepara los ``grupos_finales`` con :func:`preparar_grupos_y_pausar`
-        (agrupación no aplica —los grupos vienen dados— + corrección IA opcional
-        con la ``api_key`` transitoria). En lugar de renderizar directamente
+        (agrupación no aplica —los grupos vienen dados— y la corrección con IA se
+        OMITE con ``aplicar_ia=False`` porque los grupos ya vienen aprobados a
+        mano por el usuario; si la IA estaba activada, ya se aplicó antes de la
+        pausa de revisión). En lugar de renderizar directamente
         (comportamiento previo), el Job vuelve a pausarse en
         ``ESPERANDO_EDICION_FINAL`` a la espera de que el usuario ajuste la
         previsualización y añada los textos extra (spec edicion-avanzada-shorts,
@@ -295,6 +297,11 @@ class JobRunner:
                 palabras=[],
                 grupos=grupos,
                 api_key=api_key,
+                # Al reanudar desde la revisión manual NO se vuelve a pasar la IA
+                # sobre los grupos ya aprobados (evita doble corrección): si la IA
+                # estaba activada ya se aplicó antes de la pausa; si estaba
+                # desactivada era no-op de todos modos.
+                aplicar_ia=False,
                 reporter=reporter,
             )
             # Persistir la pausa de edición final con los grupos ya definitivos.

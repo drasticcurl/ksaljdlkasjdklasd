@@ -157,3 +157,122 @@ def test_sin_revision_corre_completo(tmp_path: Path, monkeypatch) -> None:
     assert resultado.grupos is not None and len(resultado.grupos) == 1
     assert resultado.grupos[0].texto == "hola mundo"
     assert resultado.cortado is not None
+
+
+
+# ---------------------------------------------------------------------------
+# "Aprobar subtítulos a mano" (spec edicion-avanzada-shorts)
+# ---------------------------------------------------------------------------
+from app.engine import pipeline as _pipeline_mod  # noqa: E402
+from app.engine.pipeline import preparar_grupos_y_pausar  # noqa: E402
+from app.models.settings import AjustesRevisionIA  # noqa: E402
+
+
+def test_aprobar_a_mano_con_ia_pausa_con_grupos_corregidos(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Con ``aprobar_a_mano=True`` e IA activada, el pipeline se PAUSA en
+    ESPERANDO_REVISION mostrando los grupos YA corregidos por la IA, para que el
+    usuario los revise a mano antes de renderizar.
+    """
+    job = _hacer_job(tmp_path, monkeypatch, "job-aprobar-ia")
+    spy = _SubtitulosSpy()
+
+    # Doble de la corrección IA: pone el texto en mayúsculas para poder verificar
+    # que la salida de la IA es lo que se muestra en la pausa de revisión.
+    def _fake_ia(grupos, revision_ia, api_key, *, minusculas=False):
+        return [
+            GrupoSubtitulo(texto=g.texto.upper(), inicio_s=g.inicio_s, fin_s=g.fin_s)
+            for g in grupos
+        ]
+
+    monkeypatch.setattr(_pipeline_mod, "corregir_grupos_ia", _fake_ia)
+
+    # IA activada + aprobar_a_mano activado (revisar clásico irrelevante aquí).
+    ajustes = Ajustes(
+        subtitulos=AjustesSubtitulos(aprobar_a_mano=True),
+        revision_ia=AjustesRevisionIA(activado=True),
+    )
+    ajustes.silencios.activado = False
+
+    resultado = ejecutar_pipeline(
+        job,
+        ["/clips/a.mp4"],
+        ajustes,
+        musica_wav=None,
+        api_key="sk-test",
+        fn_unir=_fake_unir,
+        fn_cortar=_fake_cortar,
+        fn_transcribir=_fake_transcribir,
+        fn_subtitulos=spy,
+        fn_preservar=_fake_preservar,
+    )
+
+    # Pausa en revisión manual (no en elección/edición final).
+    assert resultado.pendiente_revision is True
+    assert resultado.pendiente_eleccion_render is False
+    assert resultado.exito is False
+    # Los grupos mostrados son los YA corregidos por la IA (mayúsculas).
+    assert resultado.grupos is not None and len(resultado.grupos) == 1
+    assert resultado.grupos[0].texto == "HOLA MUNDO"
+    # No se renderizó nada en la fase 1.
+    assert spy.grupos_recibidos == "no-invocado"
+
+
+def test_reanudar_desde_revision_no_reaplica_ia(monkeypatch) -> None:
+    """Al reanudar tras la revisión manual (``aplicar_ia=False``), NO se vuelve a
+    pasar la IA sobre los grupos ya aprobados (evita doble corrección).
+    """
+    llamadas: List[Any] = []
+
+    def _ia_spy(grupos, revision_ia, api_key, *, minusculas=False):
+        llamadas.append(grupos)
+        return [
+            GrupoSubtitulo(texto=g.texto + "-IA", inicio_s=g.inicio_s, fin_s=g.fin_s)
+            for g in grupos
+        ]
+
+    editados = [GrupoSubtitulo(texto="Hola mundo aprobado", inicio_s=0.0, fin_s=1.0)]
+    ajustes = Ajustes(revision_ia=AjustesRevisionIA(activado=True))
+
+    resultado = preparar_grupos_y_pausar(
+        "cortado.mp4",
+        ajustes,
+        palabras=[],
+        grupos=editados,
+        api_key="sk-test",
+        aplicar_ia=False,
+        fn_corregir_ia=_ia_spy,
+    )
+
+    # La IA NO se invocó y los grupos se conservan tal cual (aprobados a mano).
+    assert llamadas == []
+    assert resultado.pendiente_eleccion_render is True
+    assert resultado.grupos is not None
+    assert resultado.grupos[0].texto == "Hola mundo aprobado"
+
+
+def test_reanudar_normal_si_reaplica_ia(monkeypatch) -> None:
+    """Comprobación de control: con ``aplicar_ia=True`` (por defecto) sí se aplica
+    la corrección IA en ``preparar_grupos_y_pausar``.
+    """
+    def _ia_spy(grupos, revision_ia, api_key, *, minusculas=False):
+        return [
+            GrupoSubtitulo(texto=g.texto + "-IA", inicio_s=g.inicio_s, fin_s=g.fin_s)
+            for g in grupos
+        ]
+
+    base = [GrupoSubtitulo(texto="hola mundo", inicio_s=0.0, fin_s=1.0)]
+    ajustes = Ajustes(revision_ia=AjustesRevisionIA(activado=True))
+
+    resultado = preparar_grupos_y_pausar(
+        "cortado.mp4",
+        ajustes,
+        palabras=[],
+        grupos=base,
+        api_key="sk-test",
+        fn_corregir_ia=_ia_spy,
+    )
+
+    assert resultado.grupos is not None
+    assert resultado.grupos[0].texto == "hola mundo-IA"
