@@ -1,0 +1,14 @@
+{
+  "pbtResults": {
+    "1. Escribir prueba exploratoria de la condición del bug (ANTES del arreglo)": {
+      "status": "passed",
+      "failingExample": "Counterexample: [{\"duracion\":10,\"tramos\":[{\"inicio_s\":2,\"fin_s\":4}],\"cursorS\":7}] → AssertionError: expected 1 to be 2. El código sin arreglar coloca inicio=ultimo.fin_s=4 (nuevo [4,5]) y normalizarTramos lo fusiona con [2,4] → [2,5], |tramos|=1 en vez de 2. Además ignora cursorS=7. El fallo CONFIRMA el bug (fusión con el último tramo + cursor ignorado).",
+      "lastRunTimestamp": 1784057347003
+    },
+    "5. Ampliar pruebas basadas en propiedades (fast-check)": {
+      "status": "passed",
+      "lastRunTimestamp": 1784057755658
+    }
+  },
+  "executionHistory": {}
+}
