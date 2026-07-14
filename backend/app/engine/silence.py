@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
@@ -579,42 +580,24 @@ def cortar_silencios_ffmpeg(
     salida_path = Path(salida)
     margen_s = float(margen_ms) / 1000.0
 
-    logger.info("ffmpeg resuelto en: %s", shutil.which("ffmpeg") or "(no encontrado)")
     logger.info("ffprobe resuelto en: %s", shutil.which("ffprobe") or "(no encontrado)")
-    _loguear_archivo_entrada(entrada_path)
 
-    # (1) Detección de silencios.
-    cmd_detect = comando_silencedetect(
-        str(entrada_path), umbral_db, config.DEFAULT_MIN_SILENCIO_S
+    # (1+2) Detección de silencios y duración (reutiliza ``detectar_silencios``
+    # en modo "db"): ejecuta ``silencedetect`` + ``ffprobe`` SIN recortar el
+    # vídeo. El comportamiento observable es idéntico a la versión previa: los
+    # mismos comandos, la misma gestión de errores y los mismos tramos.
+    deteccion = detectar_silencios(
+        entrada_path,
+        umbral_db=umbral_db,
+        margen_ms=margen_ms,
+        modo="db",
+        runner=runner,
     )
-    logger.info("Ejecutando silencedetect: %s", " ".join(cmd_detect))
-    try:
-        res_detect = runner(cmd_detect)
-    except OSError as exc:
-        raise SilenceProcessingError(
-            f"no se pudo ejecutar ffmpeg (silencedetect): {exc}"
-        ) from exc
-    if res_detect.returncode != 0:
-        detalle = _recortar_salida((res_detect.stderr or "").strip())
-        interpretacion = interpretar_codigo_salida(res_detect.returncode)
-        sufijo = f" ({interpretacion})" if interpretacion else ""
-        logger.error(
-            "ffmpeg (silencedetect) falló (código %s). Comando: %s\nstderr:\n%s",
-            res_detect.returncode,
-            " ".join(cmd_detect),
-            (res_detect.stderr or "").strip() or "(vacío)",
-        )
-        raise SilenceProcessingError(
-            f"ffmpeg (silencedetect) falló (código {res_detect.returncode}): "
-            f"{detalle or 'sin salida de diagnóstico'}{sufijo}"
-        )
+    silencios = deteccion.silencios
+    duracion = deteccion.duracion
 
-    silencios = parsear_silencedetect(res_detect.stderr or "")
-
-    # (2) Duración total del medio.
-    duracion = obtener_duracion(str(entrada_path), runner)
-
-    # (3) Cálculo (puro) de los segmentos a conservar.
+    # (3) Cálculo (puro) de los segmentos a conservar (aquí sí se aplica el
+    # margen, igual que antes del refactor).
     segmentos = calcular_segmentos_conservar(silencios, duracion, margen_s)
     filtro = construir_filtro_recorte(segmentos)
     logger.info(
@@ -739,27 +722,26 @@ def cortar_silencios_vad(
     salida_path = Path(salida)
     margen_s = float(margen_ms) / 1000.0
 
-    logger.info("ffmpeg resuelto en: %s", shutil.which("ffmpeg") or "(no encontrado)")
-    _loguear_archivo_entrada(entrada_path)
+    # (1+2+3a) Detección de voz (IA/VAD) + duración + complemento (reutiliza
+    # ``detectar_silencios`` en modo "voz"): produce los tramos SIN voz sin
+    # recortar el vídeo, con la misma traducción de fallos del detector a
+    # :class:`SilenceProcessingError` que antes del refactor.
+    deteccion = detectar_silencios(
+        entrada_path,
+        umbral_db=0.0,  # no se usa en modo "voz"; el VAD no depende del umbral dB
+        margen_ms=margen_ms,
+        modo="voz",
+        runner=runner,
+        detector_voz=detector_voz,
+    )
+    silencios = deteccion.silencios
+    duracion = deteccion.duracion
 
-    # (1) Detección de voz (IA/VAD).
-    try:
-        voz = detector_voz(str(entrada_path))
-    except Exception as exc:  # noqa: BLE001 - se traduce a error del paso
-        raise SilenceProcessingError(
-            f"la detección de voz (VAD) falló: {exc}"
-        ) from exc
-
-    # (2) Duración total del medio.
-    duracion = obtener_duracion(str(entrada_path), runner)
-
-    # (3) Segmentos a conservar: complemento de los NO-voz, expandido por margen.
-    silencios = _silencios_desde_voz(voz, duracion)
+    # (3b) Segmentos a conservar: complemento de los NO-voz, expandido por margen.
     segmentos = calcular_segmentos_conservar(silencios, duracion, margen_s)
     filtro = construir_filtro_recorte(segmentos)
     logger.info(
-        "VAD: tramos de voz detectados: %d; segmentos a conservar: %d",
-        len(voz),
+        "VAD: segmentos a conservar: %d",
         len(segmentos),
     )
 
@@ -777,6 +759,302 @@ def cortar_silencios_vad(
         raise SilenceProcessingError(
             f"ffmpeg (recorte VAD) falló (código {res_recorte.returncode}): "
             f"{detalle or 'sin salida de diagnóstico'}"
+        )
+
+    return salida_path
+
+
+# ===========================================================================
+# Refactor: detección y aplicación separadas (Req 1.1, 5.5, 5.6, 5.8, 16.3)
+#
+# Para soportar la nueva pausa de edición manual de silencios en el timeline
+# (el usuario ajusta los tramos a borrar sobre el vídeo unido y luego se
+# reconstruye el recortado), la orquestación monolítica de ``cortar_silencios``
+# se descompone en piezas puras/inyectables:
+#
+#   * ``detectar_silencios``: DETECTA los tramos de silencio SIN recortar el
+#     vídeo (fase previa a la pausa). Reutiliza ``silencedetect``/VAD +
+#     ``obtener_duracion``.
+#   * ``segmentos_conservar_desde_borrado``: función PURA que, dados los tramos
+#     a BORRAR (ya editados por el usuario) y la duración, calcula los segmentos
+#     a CONSERVAR (su complemento) según el pseudocódigo del diseño (§7.1).
+#   * ``aplicar_tramos_borrado``: reconstruye el vídeo recortado conservando el
+#     complemento de los tramos a borrar (fase de reanudación).
+#
+# Los motores existentes (``cortar_silencios_ffmpeg`` y ``cortar_silencios_vad``)
+# se reescriben para apoyarse en ``detectar_silencios``, preservando exactamente
+# su comportamiento previo (los tests de equivalencia siguen pasando).
+# ===========================================================================
+
+
+@dataclass(frozen=True)
+class ResultadoDeteccionSilencios:
+    """Resultado de detectar silencios SIN recortar el vídeo.
+
+    Atributos:
+        silencios: Tramos de silencio a BORRAR ``(inicio, fin)`` en segundos,
+            normalizados y recortados a ``[0, duracion]``, ordenados de forma
+            ascendente por ``inicio`` y sin solapes (los solapados o adyacentes
+            se fusionan). Cumple ``0 <= inicio < fin <= duracion`` (Req 1.1).
+        duracion: Duración total del vídeo (unido) en segundos.
+    """
+
+    silencios: List[Tuple[float, float]]
+    duracion: float
+
+
+def _normalizar_y_fusionar_tramos(
+    tramos: List[Tuple[float, float]], duracion: float
+) -> List[Tuple[float, float]]:
+    """Normaliza una lista de tramos ``(inicio, fin)`` a ``[0, duracion]`` (PURA).
+
+    Recorta (clamp) cada tramo a ``[0, duracion]`` (los ``inf`` se recortan a
+    ``duracion``), descarta los degenerados (``fin <= inicio``), ordena por
+    inicio y fusiona los solapados o adyacentes (criterio ``ini <= fin_previo``,
+    idéntico al de :func:`calcular_segmentos_conservar`).
+
+    Args:
+        tramos: Tramos ``(inicio, fin)`` en segundos (``fin`` puede ser ``inf``).
+        duracion: Duración total del medio (si ``<= 0`` se devuelve lista vacía).
+
+    Returns:
+        Lista ordenada de tramos ``(inicio, fin)`` sin solapes, dentro de
+        ``[0, duracion]``; vacía si no queda ningún tramo válido.
+    """
+    if duracion <= 0:
+        return []
+
+    # (1) Clamp a [0, duracion] y descarte de degenerados.
+    normalizados: List[Tuple[float, float]] = []
+    for ini, fin in tramos:
+        ini_c = max(0.0, min(float(ini), duracion))
+        fin_val = duracion if fin == float("inf") else float(fin)
+        fin_c = max(0.0, min(fin_val, duracion))
+        if fin_c > ini_c:
+            normalizados.append((ini_c, fin_c))
+    normalizados.sort()
+
+    # (2) Fusión de solapados/adyacentes.
+    fusionados: List[Tuple[float, float]] = []
+    for ini, fin in normalizados:
+        if fusionados and ini <= fusionados[-1][1]:
+            prev_ini, prev_fin = fusionados[-1]
+            fusionados[-1] = (prev_ini, max(prev_fin, fin))
+        else:
+            fusionados.append((ini, fin))
+    return fusionados
+
+
+def detectar_silencios(
+    entrada: Union[str, Path],
+    *,
+    umbral_db: float,
+    margen_ms: float,
+    modo: str = "db",
+    runner: Runner = ejecutar_comando,
+    detector_voz=deteccion_voz_silero,
+) -> ResultadoDeteccionSilencios:
+    """Detecta los tramos de silencio del vídeo **sin recortarlo** (Req 1.1).
+
+    Es la FASE de detección que se ejecuta antes de la pausa de edición manual
+    de silencios. Según ``modo``:
+
+    * ``"db"``: usa ``silencedetect`` (ffmpeg) con el ``umbral_db`` indicado y la
+      duración mínima de silencio por defecto (``config.DEFAULT_MIN_SILENCIO_S``);
+      empareja los tramos con :func:`parsear_silencedetect`.
+    * ``"voz"``: usa el detector de voz inyectable (VAD) y toma como silencios el
+      **complemento** de los tramos con voz (:func:`_silencios_desde_voz`).
+
+    **No** aplica el margen aquí: el margen se aplica más tarde al calcular los
+    segmentos a conservar (motores ``cortar_silencios_*``). Los tramos devueltos
+    se normalizan (clamp a ``[0, duracion]``), se ordenan y se fusionan, de modo
+    que cumplen ``0 <= inicio < fin <= duracion``, están ordenados y sin solapes.
+
+    Args:
+        entrada: Ruta del vídeo de entrada (unido).
+        umbral_db: Umbral de ruido en dB (solo se usa en ``modo="db"``).
+        margen_ms: Margen en milisegundos (se acepta por simetría de la API pero
+            NO se aplica en la detección).
+        modo: ``"db"`` (umbral) o ``"voz"`` (VAD). Cualquier otro valor se trata
+            como ``"db"``.
+        runner: Ejecutor de comandos inyectable (ffmpeg/ffprobe).
+        detector_voz: Detector de voz inyectable; por defecto el VAD Silero.
+
+    Returns:
+        Un :class:`ResultadoDeteccionSilencios` con los tramos de silencio y la
+        duración total del vídeo.
+
+    Raises:
+        SilenceProcessingError: Si ffmpeg/ffprobe o la detección de voz fallan.
+    """
+    entrada_path = Path(entrada)
+
+    logger.info("ffmpeg resuelto en: %s", shutil.which("ffmpeg") or "(no encontrado)")
+    _loguear_archivo_entrada(entrada_path)
+
+    if modo == "voz":
+        # (1) Detección de voz (IA/VAD): los fallos se traducen a error del paso.
+        try:
+            voz = detector_voz(str(entrada_path))
+        except Exception as exc:  # noqa: BLE001 - se traduce a error del paso
+            raise SilenceProcessingError(
+                f"la detección de voz (VAD) falló: {exc}"
+            ) from exc
+        # (2) Duración total del medio.
+        duracion = obtener_duracion(str(entrada_path), runner)
+        # (3) Silencios = complemento de los tramos con voz.
+        silencios_brutos = _silencios_desde_voz(voz, duracion)
+    else:
+        # (1) Detección por umbral de dB con silencedetect.
+        cmd_detect = comando_silencedetect(
+            str(entrada_path), umbral_db, config.DEFAULT_MIN_SILENCIO_S
+        )
+        logger.info("Ejecutando silencedetect: %s", " ".join(cmd_detect))
+        try:
+            res_detect = runner(cmd_detect)
+        except OSError as exc:
+            raise SilenceProcessingError(
+                f"no se pudo ejecutar ffmpeg (silencedetect): {exc}"
+            ) from exc
+        if res_detect.returncode != 0:
+            detalle = _recortar_salida((res_detect.stderr or "").strip())
+            interpretacion = interpretar_codigo_salida(res_detect.returncode)
+            sufijo = f" ({interpretacion})" if interpretacion else ""
+            logger.error(
+                "ffmpeg (silencedetect) falló (código %s). Comando: %s\nstderr:\n%s",
+                res_detect.returncode,
+                " ".join(cmd_detect),
+                (res_detect.stderr or "").strip() or "(vacío)",
+            )
+            raise SilenceProcessingError(
+                f"ffmpeg (silencedetect) falló (código {res_detect.returncode}): "
+                f"{detalle or 'sin salida de diagnóstico'}{sufijo}"
+            )
+        silencios_brutos = parsear_silencedetect(res_detect.stderr or "")
+        # (2) Duración total del medio.
+        duracion = obtener_duracion(str(entrada_path), runner)
+
+    # (4) Normaliza/clamp/ordena/fusiona para cumplir la garantía de Req 1.1.
+    silencios = _normalizar_y_fusionar_tramos(silencios_brutos, duracion)
+    return ResultadoDeteccionSilencios(silencios=silencios, duracion=duracion)
+
+
+def segmentos_conservar_desde_borrado(
+    tramos_borrar: List[Tuple[float, float]],
+    duracion: float,
+) -> List[Tuple[float, float]]:
+    """Complemento PURO de los tramos a BORRAR dentro de ``[0, duracion]`` (§7.1).
+
+    Dados los tramos que el usuario marcó para borrar (ya editados en el
+    timeline) y la duración total, devuelve los segmentos a CONSERVAR. Sigue
+    exactamente el pseudocódigo del diseño (§7.1):
+
+    1. Si ``duracion <= 0`` devuelve ``[(0.0, 0.0)]``.
+    2. Normaliza/recorta los tramos a ``[0, duracion]`` y descarta los
+       degenerados (``fin <= inicio``).
+    3. Fusiona los tramos a borrar solapados o adyacentes.
+    4. Calcula el complemento dentro de ``[0, duracion]``.
+    5. Caso **D-VACIO**: si tras el complemento no queda nada (el usuario marcó
+       todo para borrar), conserva el vídeo entero ``[(0.0, duracion)]`` para no
+       producir un artefacto de 0 s.
+
+    **No** aplica margen (los tramos ya vienen editados por el usuario).
+
+    Garantías (postcondiciones): salida ordenada de forma ascendente, sin
+    solapes, contenida en ``[0, duracion]`` y **nunca vacía**.
+
+    Args:
+        tramos_borrar: Tramos a borrar ``(inicio, fin)`` en segundos.
+        duracion: Duración total del vídeo en segundos.
+
+    Returns:
+        Lista ordenada de segmentos ``(inicio, fin)`` a conservar.
+    """
+    if duracion <= 0:
+        return [(0.0, 0.0)]
+
+    # (1)+(2) Normalizar/clamp/descartar degenerados y (3) fusionar solapados.
+    borrados = _normalizar_y_fusionar_tramos(tramos_borrar, duracion)
+
+    # (4) Complemento dentro de [0, duracion] = lo que se CONSERVA.
+    conservar: List[Tuple[float, float]] = []
+    cursor = 0.0
+    for ini, fin in borrados:
+        if ini > cursor:
+            conservar.append((cursor, ini))
+        cursor = max(cursor, fin)
+    if cursor < duracion:
+        conservar.append((cursor, duracion))
+
+    # (5) Caso D-VACIO: si se borra todo, se conserva el vídeo entero.
+    if not conservar:
+        return [(0.0, duracion)]
+    return conservar
+
+
+def aplicar_tramos_borrado(
+    entrada: Union[str, Path],
+    salida: Union[str, Path],
+    tramos_borrar: List[Tuple[float, float]],
+    duracion: float,
+    *,
+    runner: Runner = ejecutar_comando,
+) -> Path:
+    """Reconstruye el vídeo recortado conservando el complemento de los borrados.
+
+    Es la FASE de aplicación que se ejecuta al reanudar tras la pausa de edición
+    de silencios: calcula los segmentos a conservar con
+    :func:`segmentos_conservar_desde_borrado`, construye el filtro de recorte con
+    :func:`construir_filtro_recorte` y ejecuta el comando de recorte de ffmpeg
+    (:func:`comando_recorte_ffmpeg`), ambos reutilizados del motor existente.
+
+    Args:
+        entrada: Ruta del vídeo de entrada (unido) a recortar.
+        salida: Ruta del vídeo recortado a producir.
+        tramos_borrar: Tramos a borrar ``(inicio, fin)`` confirmados por el usuario.
+        duracion: Duración total del vídeo de entrada en segundos.
+        runner: Ejecutor de comandos inyectable (ffmpeg).
+
+    Returns:
+        La ruta del vídeo recortado (``salida``).
+
+    Raises:
+        SilenceProcessingError: Si ffmpeg falla al recortar.
+    """
+    entrada_path = Path(entrada)
+    salida_path = Path(salida)
+
+    # (1) Segmentos a conservar (complemento puro, sin margen; nunca vacío).
+    segmentos = segmentos_conservar_desde_borrado(tramos_borrar, duracion)
+    filtro = construir_filtro_recorte(segmentos)
+    logger.info(
+        "Aplicando tramos a borrar: %d; segmentos a conservar: %d",
+        len(tramos_borrar),
+        len(segmentos),
+    )
+
+    # (2) Recorte con select/aselect reconstruyendo la línea de tiempo.
+    cmd_recorte = comando_recorte_ffmpeg(str(entrada_path), str(salida_path), filtro)
+    logger.info("Ejecutando recorte ffmpeg (aplicar borrado): %s", " ".join(cmd_recorte))
+    try:
+        res_recorte = runner(cmd_recorte)
+    except OSError as exc:
+        raise SilenceProcessingError(
+            f"no se pudo ejecutar ffmpeg (recorte): {exc}"
+        ) from exc
+    if res_recorte.returncode != 0:
+        detalle = _recortar_salida((res_recorte.stderr or "").strip())
+        interpretacion = interpretar_codigo_salida(res_recorte.returncode)
+        sufijo = f" ({interpretacion})" if interpretacion else ""
+        logger.error(
+            "ffmpeg (recorte) falló (código %s). Comando: %s\nstderr:\n%s",
+            res_recorte.returncode,
+            " ".join(cmd_recorte),
+            (res_recorte.stderr or "").strip() or "(vacío)",
+        )
+        raise SilenceProcessingError(
+            f"ffmpeg (recorte) falló (código {res_recorte.returncode}): "
+            f"{detalle or 'sin salida de diagnóstico'}{sufijo}"
         )
 
     return salida_path
@@ -983,10 +1261,14 @@ __all__ = [
     "SilenceValidationError",
     "SilenceProcessingError",
     "ValidadorSilencio",
+    "ResultadoDeteccionSilencios",
     "comando_auto_editor",
     "cortar_silencios",
     "cortar_silencios_ffmpeg",
     "cortar_silencios_vad",
+    "detectar_silencios",
+    "segmentos_conservar_desde_borrado",
+    "aplicar_tramos_borrado",
     "deteccion_voz_silero",
     "parsear_silencedetect",
     "calcular_segmentos_conservar",

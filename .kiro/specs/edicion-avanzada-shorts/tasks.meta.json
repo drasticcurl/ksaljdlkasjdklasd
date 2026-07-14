@@ -1,0 +1,585 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Ampliar estados y campos del Job en `backend/app/models/job.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361272
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035373856
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035657359
+      }
+    ],
+    "1.2 Añadir modelos y validadores en `backend/app/models/settings.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361276
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035375815
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035659514
+      }
+    ],
+    "2.1 Separar detección y aplicación en funciones puras/inyectables": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361279
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035673924
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036077709
+      }
+    ],
+    "3.1 Emitir `textosExtra` en las props del render": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361283
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035674959
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036356681
+      }
+    ],
+    "4.1 Ampliar `backend/app/jobs/manager.py` con marcadores y setters": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361286
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036385140
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036800132
+      }
+    ],
+    "4.2 Partir el pipeline de silencios y las pausas en `backend/app/engine/pipeline.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361289
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037269234
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038126378
+      }
+    ],
+    "4.3 Añadir reanudaciones y persistencia de pausas en `backend/app/jobs/runner.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361292
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038323659
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038760639
+      }
+    ],
+    "5.1 Crear el router `backend/app/api/silencios.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361298
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038761685
+      }
+    ],
+    "5.2 Mantener el contrato de solo texto en `backend/app/api/subtitles.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361303
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038762693
+      }
+    ],
+    "5.3 Ampliar `backend/app/api/render.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361308
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038763696
+      }
+    ],
+    "5.4 Registrar router y servir el vídeo unido en `backend/main.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361313
+      }
+    ],
+    "6. Punto de control del backend": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361319
+      }
+    ],
+    "7.1 Ampliar `frontend/lib/types.ts`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361328
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035375865
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035660247
+      }
+    ],
+    "7.2 Ampliar `frontend/lib/api.ts` con nuevos clientes y persistencia de clave": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361331
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035675967
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036078728
+      }
+    ],
+    "8.1 Añadir `textosExtraBackendARemotion` en `frontend/lib/remotion-map.ts`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361335
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035676969
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036080691
+      }
+    ],
+    "8.2 Añadir proyección de estilo en `frontend/lib/estilo.ts`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361337
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035677862
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036081717
+      }
+    ],
+    "9.1 Extender el contrato de tipos en ambas copias": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361341
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035376906
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035660338
+      }
+    ],
+    "9.2 Crear `TextosExtraLayer.tsx` en ambas copias": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361344
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036124533
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036360462
+      }
+    ],
+    "9.3 Montar la capa en `ShortVideo.tsx` y ajustar `Root.tsx`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361347
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036386167
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036802086
+      }
+    ],
+    "10.1 Implementar `frontend/components/TimelineSilencios.tsx`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361350
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036387159
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036802142
+      }
+    ],
+    "10.3 Reutilizar `SubtitleReview.tsx` para la revisión de solo texto": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361353
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037270204
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038127403
+      }
+    ],
+    "10.4 Implementar `TextosExtra.tsx` + `EstiloTextoExtra.tsx`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361356
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036389126
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036803197
+      }
+    ],
+    "10.6 Transformar `PreviewRemotionReal.tsx` → `PreviewFinal.tsx`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361361
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037272157
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038128444
+      }
+    ],
+    "10.7 Persistir la clave en `frontend/components/settings/OpenAIKeyInput.tsx`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361364
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036833746
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037014213
+      }
+    ],
+    "10.8 Orquestar los nuevos estados en `frontend/app/page.tsx`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361367
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038324660
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038577079
+      }
+    ],
+    "12. Punto de control final": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035361370
+      }
+    ],
+    "1. Modelos de datos y validadores del backend": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035659518
+      }
+    ],
+    "1.3 Escribir prueba de propiedad de validación de textos extra (hypothesis)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784035703407
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036083317
+      }
+    ],
+    "2. Refactor del motor de silencios en `backend/app/engine/silence.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036077712
+      }
+    ],
+    "7. Tipos y cliente de API del frontend": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036078732
+      }
+    ],
+    "8. Mapeo y proyección de estilo de textos extra": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036081720
+      }
+    ],
+    "2.2 Escribir prueba de propiedad del complemento de tramos (hypothesis)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036121586
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036358688
+      }
+    ],
+    "2.3 Escribir pruebas unitarias de equivalencia del refactor": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036122588
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036359682
+      }
+    ],
+    "3. Ampliar el constructor de props en `backend/app/engine/remotion.py`": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036356684
+      }
+    ],
+    "3.2 Escribir prueba de propiedad de retrocompatibilidad (hypothesis)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036384114
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036799106
+      }
+    ],
+    "9. Composición Remotion (DOS copias idénticas salvo `FondoVideo`)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784036802089
+      }
+    ],
+    "8.3 Escribir prueba de propiedad de coherencia de mapeo (fast-check)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037044917
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037250960
+      }
+    ],
+    "8.4 Escribir pruebas unitarias de la proyección de estilo (vitest)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037045908
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037251966
+      }
+    ],
+    "9.4 Verificar tipos y sincronía de copias": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037273185
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038129420
+      }
+    ],
+    "7.3 Escribir pruebas del cliente API y de la persistencia de clave (vitest)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784037275126
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038130344
+      }
+    ],
+    "10.2 Escribir pruebas de `TimelineSilencios` (vitest + fast-check)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038137164
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038318753
+      }
+    ],
+    "10.5 Escribir pruebas de `TextosExtra` (vitest)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038138160
+      },
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038318900
+      }
+    ],
+    "10. Componentes de interfaz y orquestación": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038577082
+      }
+    ],
+    "4. Orquestación del pipeline y gestión de Jobs": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038760642
+      }
+    ],
+    "4.4 Escribir pruebas de transiciones de estado y pausas (pytest)": [
+      {
+        "executionId": "c4ee455c-0cee-43e8-8aa3-18db26aacfe8",
+        "chatSessionId": "26a3c998-90d2-494b-bc2a-4acc166ba48b",
+        "timestamp": 1784038765634
+      }
+    ]
+  }
+}

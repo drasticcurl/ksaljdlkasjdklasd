@@ -120,6 +120,9 @@ def ajustes_con_marcas(draw: st.DrawFn) -> Tuple[Ajustes, Set[str]]:
     invalidos: Set[str] = set()
 
     for ruta, (minimo, maximo) in RANGOS_MOTOR.items():
+        # Los rangos de estilo de textos extra no son campos de ``Ajustes``.
+        if ruta.startswith("texto_extra."):
+            continue
         hacer_invalido = draw(st.booleans() | st.just(False))  # sesgo hacia válido
         if hacer_invalido:
             valor = draw(_valor_invalido(ruta, minimo, maximo))

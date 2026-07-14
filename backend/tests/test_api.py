@@ -37,9 +37,11 @@ from app import config
 from app.engine.pipeline import (
     ORDEN_PASOS,
     ejecutar_pipeline,
+    reanudar_desde_silencios,
     reanudar_pipeline,
 )
-from app.engine.silence import SilenceProcessingError
+from app.engine.proc import ResultadoComando
+from app.engine.silence import ResultadoDeteccionSilencios, SilenceProcessingError
 from app.jobs.manager import JobManager
 from app.jobs.runner import JobRunner
 from app.models.job import JobStatus, PipelineStep
@@ -99,8 +101,17 @@ def _construir_fakes(
         _marcar(0, PipelineStep.UNIR.value)
         return job.resolve("unido.mp4")
 
-    def fn_cortar(entrada, salida, **kw) -> Path:  # noqa: ANN001
+    def fn_detectar(entrada, *, umbral_db, margen_ms, modo="db", runner=None, **kw):  # noqa: ANN001
+        # Detección de silencios (FASE A del paso CORTAR_SILENCIOS, spec
+        # edicion-avanzada-shorts): registra el paso CORTAR_SILENCIOS y devuelve
+        # una detección vacía (sin silencios) sin invocar ffmpeg. La aplicación
+        # del corte (FASE B) NO vuelve a registrar el paso para no duplicarlo.
         _marcar(1, PipelineStep.CORTAR_SILENCIOS.value)
+        return ResultadoDeteccionSilencios(silencios=[], duracion=1.0)
+
+    def fn_cortar(entrada, salida, **kw) -> Path:  # noqa: ANN001
+        # Conservado por compatibilidad de firma; ya NO se invoca en el nuevo
+        # flujo (el corte se aplica al reanudar con ``fn_aplicar``).
         return Path(salida)
 
     def fn_transcribir(entrada, ajustes_t, audio, **kw) -> List:  # noqa: ANN001
@@ -121,12 +132,48 @@ def _construir_fakes(
 
     return dict(
         fn_unir=fn_unir,
+        fn_detectar=fn_detectar,
         fn_cortar=fn_cortar,
         fn_transcribir=fn_transcribir,
         fn_subtitulos=fn_subtitulos,
         fn_musica=fn_musica,
         fn_preservar=fn_preservar,
     )
+
+
+def _cmd_ok(args, timeout=None) -> ResultadoComando:  # noqa: ANN001
+    """Ejecutor de comandos doble: siempre éxito (evita ffmpeg real al aplicar el corte)."""
+    return ResultadoComando(returncode=0, stdout="1.0", stderr="", args=list(args))
+
+
+def _fake_aplicar(entrada, salida, tramos, duracion, *, runner=None, **kw) -> Path:  # noqa: ANN001
+    """Doble de la aplicación del corte de silencios (FASE B). No registra paso
+    (la etapa CORTAR_SILENCIOS ya la registró la detección)."""
+    return Path(salida)
+
+
+def _flujo_completo(job_wd, orden, ajustes, fakes, *, reporter=None, musica_wav=None):  # noqa: ANN001
+    """Recorre el pipeline completo con las pausas del nuevo flujo (edicion-avanzada-shorts).
+
+    Encadena ``ejecutar_pipeline`` → (pausa de silencios) ``reanudar_desde_silencios``
+    → (pausa de edición final) ``reanudar_pipeline`` con motor ``"ass"``,
+    reutilizando los dobles inyectados. Si un paso falla en cualquier fase, la
+    función devuelve el ``ResultadoPipeline`` fallido sin avanzar (las pausas no
+    llegan a alcanzarse).
+    """
+    kw = {} if reporter is None else {"reporter": reporter}
+    r = ejecutar_pipeline(job_wd, orden, ajustes, musica_wav=musica_wav, **kw, **fakes)
+    if r.pendiente_edicion_silencios:
+        r = reanudar_desde_silencios(
+            job_wd, r.unido, [], r.duracion_unido_s, ajustes,
+            fn_aplicar=_fake_aplicar, **kw, **fakes,
+        )
+    if r.pendiente_eleccion_render:
+        r = reanudar_pipeline(
+            job_wd, r.cortado, ajustes, grupos=r.grupos, motor="ass",
+            musica_wav=musica_wav, **kw, **fakes,
+        )
+    return r
 
 
 class _ReporterAlGestor:
@@ -256,31 +303,15 @@ def test_propiedad_23_fallo_detiene_pipeline(
         fakes = _construir_fakes(recorder=recorder, fallo_en=fallo_en)
         job_wd = JobWorkdir(job_id)
 
-        resultado = ejecutar_pipeline(
-            job_wd,
-            orden_clips,
-            ajustes,
-            musica_wav="musica.wav",
-            reporter=reporter,
-            **fakes,
+        # El flujo se reparte en tres fases con pausas (spec edicion-avanzada-shorts):
+        # detección de silencios (FASE A) → pausa → aplicación + transcripción →
+        # pausa de edición final → render (motor "ass"). El ayudante recorre las
+        # pausas necesarias; cuando el fallo inyectado ocurre en una fase, el flujo
+        # se detiene ahí sin avanzar, verificándose el fail-stop completo (Req 10.7).
+        resultado = _flujo_completo(
+            job_wd, orden_clips, ajustes, fakes,
+            reporter=reporter, musica_wav="musica.wav",
         )
-        # Los pasos SUBTITULOS (3) y MUSICA (4) se ejecutan en la FASE 2
-        # (``reanudar_pipeline``) tras la pausa de elección de motor (spec
-        # subtitulos-ia-remotion, tarea 8.2). Cuando el fallo inyectado es
-        # posterior a la pausa, se continúa el flujo con el render (motor "ass")
-        # para que el fallo del paso correspondiente ocurra igualmente y se
-        # verifique el fail-stop del pipeline completo (Req 10.7).
-        if resultado.pendiente_eleccion_render:
-            resultado = reanudar_pipeline(
-                job_wd,
-                resultado.cortado,
-                ajustes,
-                grupos=resultado.grupos,
-                motor="ass",
-                musica_wav="musica.wav",
-                reporter=reporter,
-                **fakes,
-            )
 
         paso_fallido = ORDEN_PASOS[fallo_en]
         pasos_esperados = [p.value for p in ORDEN_PASOS[: fallo_en + 1]]
@@ -377,20 +408,15 @@ def test_pipeline_exito_llega_a_100() -> None:
         fakes = _construir_fakes(recorder=recorder, fallo_en=None)
         job_wd = JobWorkdir("job-ok")
         ajustes = _ajustes_con_musica()
-        # Fase 1: prepara grupos y pausa para elegir motor (spec
-        # subtitulos-ia-remotion, tarea 8.2).
-        r1 = ejecutar_pipeline(
-            job_wd, ["a", "b"], ajustes, musica_wav="musica.wav", **fakes,
-        )
-        assert r1.pendiente_eleccion_render is True
-        # Fase 2: render con el motor elegido ("ass") hasta completar al 100 %.
-        resultado = reanudar_pipeline(
-            job_wd, r1.cortado, ajustes, grupos=r1.grupos, motor="ass",
-            musica_wav="musica.wav", **fakes,
+        # Flujo completo con pausas (detección de silencios → edición final →
+        # render "ass"); el ayudante recorre las tres fases (spec
+        # edicion-avanzada-shorts).
+        resultado = _flujo_completo(
+            job_wd, ["a", "b"], ajustes, fakes, musica_wav="musica.wav",
         )
         assert resultado.exito is True
         assert resultado.ruta_video_final == job_wd.output_path
-        # Los cinco pasos se ejecutaron en orden (fase 1 + fase 2).
+        # Los cinco pasos se ejecutaron en orden (a lo largo de las tres fases).
         assert recorder == [p.value for p in ORDEN_PASOS]
 
 
@@ -401,14 +427,7 @@ def test_pipeline_omite_musica_sin_wav() -> None:
         fakes = _construir_fakes(recorder=recorder, fallo_en=None)
         job_wd = JobWorkdir("job-nomus")
         ajustes = _ajustes_con_musica()
-        r1 = ejecutar_pipeline(
-            job_wd, ["a"], ajustes, musica_wav=None, **fakes,
-        )
-        assert r1.pendiente_eleccion_render is True
-        resultado = reanudar_pipeline(
-            job_wd, r1.cortado, ajustes, grupos=r1.grupos, motor="ass",
-            musica_wav=None, **fakes,
-        )
+        resultado = _flujo_completo(job_wd, ["a"], ajustes, fakes, musica_wav=None)
         assert resultado.exito is True
         assert PipelineStep.MUSICA.value not in recorder
         assert recorder == [p.value for p in ORDEN_PASOS[:4]]
@@ -418,58 +437,59 @@ def test_pipeline_omite_musica_sin_wav() -> None:
 # Bugfix macOS "Killed: 9": fail-soft opcional del corte de silencios
 # (VSE_SILENCE_FAILSOFT). Solo afecta al paso CORTAR_SILENCIOS.
 # ---------------------------------------------------------------------------
-def _fakes_con_cortar_que_falla(recorder: List[str]) -> Dict[str, object]:
-    """Como ``_construir_fakes`` pero con un ``fn_cortar`` que lanza
-    :class:`SilenceProcessingError` (simula el fallo de auto-editor)."""
+def _fakes_con_deteccion_que_falla(recorder: List[str]) -> Dict[str, object]:
+    """Como ``_construir_fakes`` pero con un ``fn_detectar`` que lanza
+    :class:`SilenceProcessingError` (simula el fallo de la detección de silencios).
+
+    En el nuevo flujo (spec edicion-avanzada-shorts) el paso CORTAR_SILENCIOS se
+    parte en detección (FASE A) y aplicación (FASE B); el fail-soft
+    (``VSE_SILENCE_FAILSOFT``) actúa sobre el fallo de la DETECCIÓN, que es la que
+    puede reventar antes de la pausa.
+    """
     fakes = _construir_fakes(recorder=recorder, fallo_en=None)
 
-    def fn_cortar(entrada, salida, **kw):  # noqa: ANN001
+    def fn_detectar(entrada, *, umbral_db, margen_ms, modo="db", runner=None, **kw):  # noqa: ANN001
         recorder.append(PipelineStep.CORTAR_SILENCIOS.value)
         raise SilenceProcessingError(
             "auto-editor falló (código 247): sin salida de diagnóstico "
             "(el proceso terminó por señal 9 (SIGKILL))"
         )
 
-    fakes["fn_cortar"] = fn_cortar
+    fakes["fn_detectar"] = fn_detectar
     return fakes
 
 
 def test_failsoft_activo_continua_sin_recortar(monkeypatch) -> None:
-    """Con VSE_SILENCE_FAILSOFT=1, si el corte de silencios falla el pipeline
-    continúa (usando el input del paso) y ejecuta los pasos siguientes."""
+    """Con VSE_SILENCE_FAILSOFT=1, si la detección de silencios falla el pipeline
+    continúa (usando el vídeo unido) y ejecuta los pasos siguientes."""
     monkeypatch.setenv("VSE_SILENCE_FAILSOFT", "1")
     with isolated_config_dirs():
         recorder: List[str] = []
-        fakes = _fakes_con_cortar_que_falla(recorder)
+        fakes = _fakes_con_deteccion_que_falla(recorder)
         job_wd = JobWorkdir("job-failsoft-on")
         ajustes = _ajustes_con_musica()
 
-        # Fase 1: el corte de silencios falla pero el fail-soft continúa; tras la
-        # transcripción el pipeline se pausa para elegir motor (tarea 8.2).
-        r1 = ejecutar_pipeline(
-            job_wd, ["a", "b"], ajustes, musica_wav="musica.wav", **fakes,
-        )
-        assert r1.pendiente_eleccion_render is True
-        # Fase 2: render con motor "ass" hasta completar.
-        resultado = reanudar_pipeline(
-            job_wd, r1.cortado, ajustes, grupos=r1.grupos, motor="ass",
-            musica_wav="musica.wav", **fakes,
+        # La detección falla pero el fail-soft continúa SIN pausa de silencios;
+        # tras la transcripción el pipeline se pausa en la edición final y el
+        # render (motor "ass") completa el Job.
+        resultado = _flujo_completo(
+            job_wd, ["a", "b"], ajustes, fakes, musica_wav="musica.wav",
         )
 
-        # El pipeline termina con éxito pese al fallo del corte de silencios.
+        # El pipeline termina con éxito pese al fallo de la detección de silencios.
         assert resultado.exito is True
         assert resultado.ruta_video_final == job_wd.output_path
-        # Se intentó el corte y, tras el fallo, se ejecutaron los pasos siguientes.
+        # Se intentó la detección y, tras el fallo, se ejecutaron los siguientes.
         assert recorder == [p.value for p in ORDEN_PASOS]
 
 
 def test_failsoft_inactivo_falla_como_siempre(monkeypatch) -> None:
-    """Sin VSE_SILENCE_FAILSOFT (o "0"), el fallo del corte de silencios marca el
-    pipeline como fallido en CORTAR_SILENCIOS y no ejecuta pasos posteriores."""
+    """Sin VSE_SILENCE_FAILSOFT (o "0"), el fallo de la detección de silencios
+    marca el pipeline como fallido en CORTAR_SILENCIOS y no ejecuta posteriores."""
     monkeypatch.setenv("VSE_SILENCE_FAILSOFT", "0")
     with isolated_config_dirs():
         recorder: List[str] = []
-        fakes = _fakes_con_cortar_que_falla(recorder)
+        fakes = _fakes_con_deteccion_que_falla(recorder)
         job_wd = JobWorkdir("job-failsoft-off")
 
         resultado = ejecutar_pipeline(
@@ -493,7 +513,7 @@ def test_failsoft_ausente_falla_como_siempre(monkeypatch) -> None:
     monkeypatch.delenv("VSE_SILENCE_FAILSOFT", raising=False)
     with isolated_config_dirs():
         recorder: List[str] = []
-        fakes = _fakes_con_cortar_que_falla(recorder)
+        fakes = _fakes_con_deteccion_que_falla(recorder)
         job_wd = JobWorkdir("job-failsoft-ausente")
 
         resultado = ejecutar_pipeline(
@@ -511,13 +531,8 @@ def test_pipeline_omite_musica_sin_ajustes() -> None:
         fakes = _construir_fakes(recorder=recorder, fallo_en=None)
         job_wd = JobWorkdir("job-nomus2")
         ajustes = Ajustes(musica=None)
-        r1 = ejecutar_pipeline(
-            job_wd, ["a"], ajustes, musica_wav="musica.wav", **fakes,
-        )
-        assert r1.pendiente_eleccion_render is True
-        resultado = reanudar_pipeline(
-            job_wd, r1.cortado, ajustes, grupos=r1.grupos, motor="ass",
-            musica_wav="musica.wav", **fakes,
+        resultado = _flujo_completo(
+            job_wd, ["a"], ajustes, fakes, musica_wav="musica.wav",
         )
         assert resultado.exito is True
         assert PipelineStep.MUSICA.value not in recorder
@@ -532,20 +547,30 @@ def test_runner_ejecuta_y_limpia_en_exito() -> None:
         manager = JobManager()
         manager.crear_job("job-run", ["a", "b"], _ajustes_con_musica(), workdir="wd")
         fakes = _construir_fakes(recorder=[], fallo_en=None)
-        runner = JobRunner(manager, **fakes)
+        # ``runner=_cmd_ok`` evita ffmpeg real al aplicar el corte de silencios.
+        runner = JobRunner(manager, runner=_cmd_ok, **fakes)
 
-        # Fase 1: el runner ejecuta hasta la pausa de elección de motor (spec
-        # subtitulos-ia-remotion, tarea 8.2) y NO limpia el workdir (se necesita
-        # para el render posterior).
+        # Fase 1: el runner ejecuta hasta la pausa de edición de silencios (spec
+        # edicion-avanzada-shorts) y NO limpia el workdir (Req 16.2).
         resultado = runner.ejecutar_job("job-run")
-        assert resultado.pendiente_eleccion_render is True
+        assert resultado.pendiente_edicion_silencios is True
         assert (
             manager.obtener("job-run").progreso.estado
-            == JobStatus.ESPERANDO_ELECCION_RENDER
+            == JobStatus.ESPERANDO_EDICION_SILENCIOS
         )
         assert JobWorkdir("job-run").root.exists()
 
-        # Fase 2: el render con el motor elegido completa el Job y limpia (Req 13.4).
+        # Fase 2: al confirmar los tramos, se aplica el corte y el Job se pausa en
+        # la edición final (sin limpiar el workdir, Req 16.2).
+        resultado = runner.reanudar_silencios_job("job-run", [])
+        assert resultado.pendiente_eleccion_render is True
+        assert (
+            manager.obtener("job-run").progreso.estado
+            == JobStatus.ESPERANDO_EDICION_FINAL
+        )
+        assert JobWorkdir("job-run").root.exists()
+
+        # Fase 3: el render (motor "ass" en este test) completa el Job y limpia (Req 13.4).
         resultado = runner.reanudar_render_job("job-run", "ass")
         assert resultado.exito is True
         prog = manager.obtener("job-run").progreso
@@ -585,13 +610,13 @@ def test_runner_lanzar_en_background() -> None:
             futuro = await runner.lanzar("job-bg")
             return await futuro
 
-        # ``lanzar`` programa la ejecución en el executor; la fase 1 termina en la
-        # pausa de elección de motor (spec subtitulos-ia-remotion, tarea 8.2).
+        # ``lanzar`` programa la ejecución en el executor; la fase inicial termina
+        # en la pausa de edición de silencios (spec edicion-avanzada-shorts).
         resultado = asyncio.run(_run())
-        assert resultado.pendiente_eleccion_render is True
+        assert resultado.pendiente_edicion_silencios is True
         assert (
             manager.obtener("job-bg").progreso.estado
-            == JobStatus.ESPERANDO_ELECCION_RENDER
+            == JobStatus.ESPERANDO_EDICION_SILENCIOS
         )
 
 
@@ -1288,9 +1313,9 @@ def test_runner_resuelve_ids_de_clip_a_rutas() -> None:
 
         resultado = runner.ejecutar_job("job-resolver")
 
-        # La resolución de ids ocurre en el paso UNIR (fase 1); el runner se pausa
-        # después para elegir el motor (spec subtitulos-ia-remotion, tarea 8.2).
-        assert resultado.pendiente_eleccion_render is True
+        # La resolución de ids ocurre en el paso UNIR (fase inicial); el runner se
+        # pausa después en la edición de silencios (spec edicion-avanzada-shorts).
+        assert resultado.pendiente_edicion_silencios is True
         # El pipeline recibió RUTAS resueltas, no los ids.
         rutas_esperadas = [str(base / f"{cid}.mp4") for cid in ids]
         assert capturado["orden"] == rutas_esperadas
@@ -1318,9 +1343,10 @@ def test_runner_resolver_clip_por_defecto_es_identidad() -> None:
         runner = JobRunner(manager, **fakes)
         resultado = runner.ejecutar_job("job-id")
 
-        # Fase 1 termina en la pausa de elección de motor (tarea 8.2); los ids se
-        # conservan tal cual con el resolutor por defecto (identidad).
-        assert resultado.pendiente_eleccion_render is True
+        # La fase inicial termina en la pausa de edición de silencios
+        # (edicion-avanzada-shorts); los ids se conservan tal cual con el
+        # resolutor por defecto (identidad).
+        assert resultado.pendiente_edicion_silencios is True
         assert capturado["orden"] == ["id-1", "id-2"]
 
 

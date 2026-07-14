@@ -67,13 +67,28 @@ def _hacer_job(tmp_path: Path, monkeypatch, nombre: str) -> JobWorkdir:
     return job
 
 
+def _ajustes_sin_silencios() -> Ajustes:
+    """Ajustes con el corte de silencios DESACTIVADO (Req 1.5).
+
+    Estos tests ejercitan el fail-soft del quemado de subtítulos (fase de render),
+    no la pausa de edición de silencios; desactivándola el pipeline continúa
+    directamente a TRANSCRIBIR y se pausa en la edición final, sin necesitar la
+    detección de silencios.
+    """
+    ajustes = Ajustes()
+    ajustes.silencios.activado = False
+    return ajustes
+
+
 def _ejecutar(job: JobWorkdir):
     eventos = []
-    # Fase 1: prepara los grupos y se pausa para elegir el motor (sin renderizar).
+    ajustes = _ajustes_sin_silencios()
+    # Fase 1: sin corte de silencios, prepara los grupos y se pausa en la edición
+    # final (sin renderizar).
     r1 = ejecutar_pipeline(
         job,
         ["/clips/a.mp4"],
-        Ajustes(),
+        ajustes,
         musica_wav=None,
         reporter=eventos.append,
         fn_unir=_fake_unir,
@@ -83,12 +98,12 @@ def _ejecutar(job: JobWorkdir):
         fn_preservar=_fake_preservar,
     )
     assert r1.pendiente_eleccion_render is True
-    # Fase 2: render con el motor elegido ("ass"); aquí ocurre (o no) el fallo del
-    # quemado de subtítulos que estos tests ejercitan.
+    # Fase 2: render con el motor "ass"; aquí ocurre (o no) el fallo del quemado
+    # de subtítulos que estos tests ejercitan.
     resultado = reanudar_pipeline(
         job,
         r1.cortado,
-        Ajustes(),
+        ajustes,
         grupos=r1.grupos,
         motor="ass",
         musica_wav=None,

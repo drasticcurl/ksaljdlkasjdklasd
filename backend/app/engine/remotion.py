@@ -54,6 +54,7 @@ from app.models.settings import (
     AjustesSubtitulos,
     GrupoSubtitulo,
     ResolucionObjetivo,
+    TextoExtra,
 )
 
 logger = logging.getLogger(__name__)
@@ -299,6 +300,74 @@ def mapear_grupos_a_props_grupos(
 
 
 # ---------------------------------------------------------------------------
+# Mapeo de TEXTOS EXTRA tipo "hook" (contrato ``textosExtra`` de props) —
+# overlays de texto plano SIN animación aplicados sobre el vídeo final
+# (edicion-avanzada-shorts, Req 10.2, 13.1, 13.2; diseño §4.3 y §6.1)
+# ---------------------------------------------------------------------------
+def _estilo_texto_extra_a_props(estilo) -> Dict[str, object]:
+    """Proyecta un :class:`EstiloTextoExtra` (snake_case) al estilo camelCase que
+    consume la composición Remotion (contrato TS ``EstiloTextoExtra``).
+
+    Es una copia explícita 1:1 campo a campo, renombrando únicamente del
+    snake_case del modelo Pydantic al camelCase del contrato de la composición:
+
+    * ``fuente`` → ``fuente``
+    * ``tamano`` → ``tamano``
+    * ``color`` → ``color``
+    * ``color_borde`` → ``colorBorde``
+    * ``grosor_borde`` → ``grosorBorde``
+    * ``negrita`` → ``negrita``
+    * ``pos_vertical_pct`` → ``posVerticalPct``
+    * ``pos_horizontal_pct`` → ``posHorizontalPct``
+
+    El orden de las claves replica el del mapeo del frontend
+    (``estiloTextoExtraARemotion`` en ``frontend/lib/remotion-map.ts``) para
+    mantener el contrato idéntico en ambos lados.
+    """
+    return {
+        "fuente": estilo.fuente,
+        "tamano": estilo.tamano,
+        "color": estilo.color,
+        "colorBorde": estilo.color_borde,
+        "grosorBorde": estilo.grosor_borde,
+        "negrita": estilo.negrita,
+        "posVerticalPct": estilo.pos_vertical_pct,
+        "posHorizontalPct": estilo.pos_horizontal_pct,
+    }
+
+
+def mapear_texto_extra_a_props(t: TextoExtra) -> Dict[str, object]:
+    """Mapea un :class:`TextoExtra` al dict del contrato ``textosExtra`` de props.
+
+    Forma devuelta (contrato TS ``TextoExtraProps``)::
+
+        {
+          "texto": <t.texto>,
+          "inicioMs": round(t.inicio_s*1000),
+          "finMs": round(t.fin_s*1000),   # garantizado finMs >= inicioMs
+          "estilo": { ...camelCase... }
+        }
+
+    La conversión segundos→ms usa :func:`_ms_desde_segundos` (la MISMA que
+    aplican grupos y palabras), de modo que se garantiza ``finMs >= inicioMs`` y
+    se mantiene la coherencia de redondeo backend↔frontend (Propiedad P7). El
+    estilo se proyecta a camelCase con :func:`_estilo_texto_extra_a_props`.
+
+    Función **pura**: no muta la entrada.
+
+    :param t: texto extra a mapear.
+    :returns: dict serializable a JSON con ``texto``, ``inicioMs``, ``finMs`` y ``estilo``.
+    """
+    inicio_ms, fin_ms = _ms_desde_segundos(t.inicio_s, t.fin_s)
+    return {
+        "texto": t.texto,
+        "inicioMs": inicio_ms,
+        "finMs": fin_ms,
+        "estilo": _estilo_texto_extra_a_props(t.estilo),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Estilo y props (contrato Python → Node)
 # ---------------------------------------------------------------------------
 def _estilo_desde_subtitulos(subtitulos: AjustesSubtitulos) -> Dict[str, object]:
@@ -326,6 +395,7 @@ def construir_props(
     duration_in_frames: int,
     combine_tokens_ms: int,
     video_src: Optional[str] = None,
+    textos_extra: Sequence[TextoExtra] = (),
 ) -> Dict[str, object]:
     """Construye el diccionario de ``inputProps`` que consume la composición Node.
 
@@ -348,6 +418,11 @@ def construir_props(
         video_src: URL HTTP del vídeo de fondo a usar como ``videoSrc`` (p. ej.
             servida por ``GET /workfile/{job_id}/{nombre}``). Si es ``None``, se
             usa la ruta absoluta de ``entrada``.
+        textos_extra: Overlays de texto plano tipo "hook" a aplicar sobre el
+            vídeo final (0..2). Se emiten en ``props["textosExtra"]`` mapeados con
+            :func:`mapear_texto_extra_a_props`. Por defecto ``()`` (sin textos):
+            el campo se emite como lista vacía ``[]`` y el resto del contrato
+            queda idéntico al previo (retrocompatibilidad, Propiedad P9).
 
     Returns:
         El diccionario de props serializable a JSON.
@@ -373,6 +448,10 @@ def construir_props(
         "grupos": grupos_props,
         "estilo": _estilo_desde_subtitulos(subtitulos),
         "combineTokensWithinMs": int(combine_tokens_ms),
+        # Campo aditivo ``textosExtra`` (edicion-avanzada-shorts): overlays de
+        # texto plano. Lista vacía ``[]`` cuando no hay textos (default ``()``),
+        # preservando el contrato previo byte a byte (retrocompatibilidad P9).
+        "textosExtra": [mapear_texto_extra_a_props(t) for t in textos_extra],
     }
 
 
@@ -485,6 +564,7 @@ def renderizar_con_remotion(
     duracion_s: Optional[float] = None,
     inspeccionar: Optional[Callable[[str], ClipInfo]] = None,
     video_url: Optional[str] = None,
+    textos_extra: Sequence[TextoExtra] = (),
 ) -> Path:
     """Renderiza el vídeo con Remotion (Node) y valida el artefacto (Req 9, 12, 13).
 
@@ -525,6 +605,11 @@ def renderizar_con_remotion(
             ``None`` se usa la ruta absoluta de ``entrada`` (comportamiento
             previo). La duración se sigue calculando desde ``entrada`` (el backend
             tiene el archivo en disco), no desde esta URL.
+        textos_extra: Overlays de texto plano tipo "hook" (0..2) a aplicar sobre
+            el vídeo final (spec edicion-avanzada-shorts, Req 10.2). Se propagan a
+            :func:`construir_props`, que los emite en ``props["textosExtra"]``. Por
+            defecto ``()`` (sin textos): el campo se emite como lista vacía,
+            preservando el contrato previo (retrocompatibilidad P9).
 
     Returns:
         La ruta del MP4 renderizado (``Path(salida)``).
@@ -555,6 +640,7 @@ def renderizar_con_remotion(
         duration_in_frames,
         combine_tokens_ms,
         video_src=video_url,
+        textos_extra=textos_extra,
     )
     props_path_obj.parent.mkdir(parents=True, exist_ok=True)
     props_path_obj.write_text(
@@ -643,6 +729,7 @@ __all__ = [
     "mapear_grupos_a_captions",
     "mapear_grupo_a_props_grupo",
     "mapear_grupos_a_props_grupos",
+    "mapear_texto_extra_a_props",
     "caption_a_dict",
     "construir_props",
     "comando_render_remotion",

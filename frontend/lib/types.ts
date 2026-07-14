@@ -260,11 +260,28 @@ export interface ProcesarResponse {
 // Progreso (GET /progreso/{id}) — Req 10.3, 10.6, 10.7
 // ---------------------------------------------------------------------------
 
-/** Estados posibles de un Job (Req 10.3). */
+/**
+ * Estados posibles de un Job (Req 10.3).
+ *
+ * Ampliación de la spec `edicion-avanzada-shorts` (aditiva y retrocompatible):
+ *   - `esperando_edicion_silencios`: nueva pausa previa a transcribir, en la que
+ *     el usuario ajusta a mano los tramos de silencio sobre el vídeo unido
+ *     (Req 1.2). No existía en el flujo anterior.
+ *   - `esperando_edicion_final`: nueva etapa final de "preview + textos extra +
+ *     render Remotion" (Req 8.1). Ocupa el MISMO punto lógico de pausa que el
+ *     antiguo `esperando_eleccion_render` (elección de motor), que ahora se
+ *     elimina de la interfaz porque el render es siempre Remotion (Req 11).
+ *
+ * `esperando_eleccion_render` se conserva en el tipo por compatibilidad con las
+ * piezas todavía no migradas (no se elimina para no romper el build); una vez
+ * completada la migración de esta feature puede retirarse.
+ */
 export type JobStatus =
   | 'en_cola'
   | 'en_ejecucion'
+  | 'esperando_edicion_silencios'
   | 'esperando_revision'
+  | 'esperando_edicion_final'
   | 'esperando_eleccion_render'
   | 'completado'
   | 'fallido';
@@ -348,6 +365,98 @@ export interface RenderEleccion {
   alto: number;
   /** Duración inspeccionada del vídeo cortado (best-effort); `null` si falla. */
   duracion_s: number | null;
+  /**
+   * Textos extra tipo "hook" ya persistidos (últimos enviados) o lista vacía si
+   * no hay ninguno (spec `edicion-avanzada-shorts`, Req 8.2, 10.1). Es un campo
+   * aditivo y opcional: los Jobs del flujo anterior (elección de motor) no lo
+   * incluyen y la UI lo trata como `[]`. En la etapa `esperando_edicion_final`
+   * el backend siempre lo emite.
+   */
+  textos_extra?: TextoExtra[];
+}
+
+// ---------------------------------------------------------------------------
+// Edición avanzada de shorts (spec edicion-avanzada-shorts)
+// Timeline de silencios (GET/POST /silencios) — Req 2, 5
+// ---------------------------------------------------------------------------
+
+/**
+ * Un tramo `[inicio_s, fin_s]` (en segundos) marcado para BORRAR del vídeo
+ * unido en el timeline de silencios (design §4.2). Invariante esperada:
+ * `0 <= inicio_s < fin_s <= duración_total` (validada en el backend).
+ */
+export interface TramoSilencio {
+  /** Instante de inicio del tramo a borrar, en segundos. */
+  inicio_s: number;
+  /** Instante de fin del tramo a borrar, en segundos. */
+  fin_s: number;
+}
+
+/**
+ * Respuesta de `GET /silencios/{id}` (design §4.2, §5.1): datos del vídeo unido
+ * (pre-corte) y los tramos de silencio detectados para el timeline.
+ */
+export interface SilenciosEdicion {
+  job_id: string;
+  estado: JobStatus;
+  /** `true` solo cuando el Job está en `esperando_edicion_silencios`. */
+  editable: boolean;
+  /** URL HTTP del vídeo UNIDO (pre-corte) para el timeline; `null` si no hay. */
+  video_url: string | null;
+  /** Nombre de archivo del vídeo unido; `null` si no hay. */
+  video_nombre: string | null;
+  /** Duración total del vídeo unido, en segundos. */
+  duracion_s: number;
+  /** Cuadros por segundo del vídeo unido. */
+  fps: number;
+  /** Ancho en píxeles del vídeo unido. */
+  ancho: number;
+  /** Alto en píxeles del vídeo unido. */
+  alto: number;
+  /** Tramos de silencio detectados (a borrar), ordenados y sin solapes. */
+  tramos: TramoSilencio[];
+}
+
+// ---------------------------------------------------------------------------
+// Textos extra tipo "hook" (etapa final) — Req 9, 10
+// ---------------------------------------------------------------------------
+
+/**
+ * Estilo INDEPENDIENTE de los subtítulos para un texto extra (design §4.2).
+ * Mismos tipos de control que el estilo de subtítulos, en camelCase. Rangos del
+ * motor: `tamano` 12..200, `grosorBorde` 0..20, posiciones 0..100, colores
+ * `#RRGGBB`.
+ */
+export interface EstiloTextoExtra {
+  fuente: string;
+  /** Tamaño de fuente: 12..200. */
+  tamano: number;
+  /** Color de relleno `#RRGGBB`. */
+  color: string;
+  /** Color del borde `#RRGGBB`. */
+  colorBorde: string;
+  /** Grosor del borde: 0..20. */
+  grosorBorde: number;
+  negrita: boolean;
+  /** Posición vertical como % de la altura: 0..100. */
+  posVerticalPct: number;
+  /** Posición horizontal como % del ancho: 0..100. */
+  posHorizontalPct: number;
+}
+
+/**
+ * Un overlay de texto plano SIN animación aplicado al vídeo final (design §4.2).
+ * El rango temporal se expresa en milisegundos (`inicioMs`/`finMs`), coherente
+ * con el contrato de la composición Remotion; el texto es visible en
+ * `[inicioMs, finMs)`.
+ */
+export interface TextoExtra {
+  texto: string;
+  /** Instante de entrada (in) del texto, en milisegundos. */
+  inicioMs: number;
+  /** Instante de salida (out) del texto, en milisegundos. */
+  finMs: number;
+  estilo: EstiloTextoExtra;
 }
 
 /** Respuesta de `GET`/`PUT` `/configuracion`. */

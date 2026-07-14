@@ -16,21 +16,77 @@ from pydantic import BaseModel, Field
 
 from app.models.settings import Ajustes, GrupoSubtitulo
 
+# ---------------------------------------------------------------------------
+# Modelos de la feature "edicion-avanzada-shorts" (tarea 1.1).
+#
+# ``TramoSilencio`` y ``TextoExtra`` viven en ``app.models.settings`` y los
+# AÑADE la tarea 1.2, que se ejecuta EN PARALELO con esta tarea 1.1. Para no
+# romper la importación de este módulo cuando la tarea 1.2 todavía no está
+# integrada, se usa un IMPORT DIFERIDO tolerante a fallos:
+#
+#   - Si los modelos ya existen en settings.py, se importan tal cual (estado
+#     final esperado del código integrado).
+#   - Si aún no existen, se definen marcadores mínimos con los mismos nombres
+#     para que las anotaciones con referencia diferida (forward-ref) de
+#     ``JobState`` se resuelvan y el modelo Pydantic quede completamente
+#     definido. Estos marcadores son transitorios y quedan sustituidos por los
+#     modelos definitivos de settings.py una vez integrada la tarea 1.2.
+#
+# SUPUESTO documentado: el contrato relevante para ``JobState`` es únicamente
+# la forma serializada de estos modelos; la validación fina de rangos de los
+# textos extra la realiza settings.py (tarea 1.2), no este módulo.
+# ---------------------------------------------------------------------------
+try:  # pragma: no cover - la rama dependiente de la integración de la tarea 1.2
+    from app.models.settings import TextoExtra, TramoSilencio
+except ImportError:  # pragma: no cover
+    class TramoSilencio(BaseModel):
+        """Marcador transitorio de un tramo ``[inicio_s, fin_s]`` a BORRAR.
+
+        Sustituido por el modelo definitivo de ``app.models.settings`` (tarea
+        1.2). Solo se usa si la tarea 1.2 aún no está integrada.
+        """
+
+        inicio_s: float = Field(ge=0.0)
+        fin_s: float = Field(ge=0.0)
+
+    class TextoExtra(BaseModel):
+        """Marcador transitorio de un overlay de texto plano (sin animación).
+
+        Sustituido por el modelo definitivo de ``app.models.settings`` (tarea
+        1.2). Solo se usa si la tarea 1.2 aún no está integrada.
+        """
+
+        texto: str
+        inicio_s: float = Field(ge=0.0)
+        fin_s: float = Field(ge=0.0)
+
 
 class JobStatus(str, Enum):
     """Estados posibles de un Job (Req 10.3)."""
 
     EN_COLA = "en_cola"
     EN_EJECUCION = "en_ejecucion"
+    # Estado NO terminal (spec edicion-avanzada-shorts, Req 1.2): tras UNIR el
+    # pipeline detecta los tramos de silencio sobre el vídeo unido (sin recortar)
+    # y se pausa a la espera de que el usuario edite manualmente dichos tramos en
+    # el timeline y confirme con `POST /silencios/{id}`. Es una pausa PREVIA a la
+    # transcripción.
+    ESPERANDO_EDICION_SILENCIOS = "esperando_edicion_silencios"
     # Estado NO terminal: el pipeline se pausó tras la transcripción y espera que
     # el usuario revise/edite los subtítulos antes de continuar (revisión manual).
     ESPERANDO_REVISION = "esperando_revision"
-    # Estado NO terminal (spec subtitulos-ia-remotion, Req 6.1): el pipeline
-    # preparó los grupos finales (agrupación + corrección IA opcional) y se pausó
-    # SIN renderizar, a la espera de que el usuario elija manualmente el motor de
-    # render (dos botones: "Editar con Remotion" / "ffmpeg"). La reanudación con
-    # el motor elegido se implementa en tareas posteriores (7 y 8).
-    ESPERANDO_ELECCION_RENDER = "esperando_eleccion_render"
+    # Estado NO terminal (spec edicion-avanzada-shorts, Req 8.1): el pipeline
+    # preparó los grupos finales de subtítulos y se pausó SIN renderizar, a la
+    # espera de la edición final (previsualización + textos extra) que el usuario
+    # confirma con `POST /render/{id}`. El render es SIEMPRE con Remotion.
+    #
+    # NOTA DE COMPATIBILIDAD (renombrado): este estado sustituye al antiguo
+    # `ESPERANDO_ELECCION_RENDER` (valor previo "esperando_eleccion_render", de la
+    # spec subtitulos-ia-remotion). Ocupa EXACTAMENTE el mismo punto lógico de
+    # pausa del pipeline (antes "elegir motor"; ahora "preview + textos extra +
+    # render Remotion"), por lo que solo cambia el nombre/valor del enum, no la
+    # posición en el flujo.
+    ESPERANDO_EDICION_FINAL = "esperando_edicion_final"
     COMPLETADO = "completado"
     FALLIDO = "fallido"
 
@@ -94,17 +150,33 @@ class JobState(BaseModel):
     #     los subtítulos al reanudar la fase 2 del pipeline.
     grupos_subtitulos: Optional[List[GrupoSubtitulo]] = Field(default=None)
     cortado_path: Optional[str] = Field(default=None)
-    # Estado de la elección de motor de render (spec subtitulos-ia-remotion,
-    # Req 6.1). Solo se rellena cuando el Job se pausa en
-    # ESPERANDO_ELECCION_RENDER:
+    # Estado de la edición final (spec edicion-avanzada-shorts, Req 8.1). Solo se
+    # rellena cuando el Job se pausa en ESPERANDO_EDICION_FINAL (antes
+    # ESPERANDO_ELECCION_RENDER; ver nota de compatibilidad en JobStatus):
     #   - ``grupos_finales``: grupos YA definitivos (agrupados + corregidos con IA
-    #     si estaba activada) que se renderizarán con el motor que elija el
-    #     usuario. Se usa un campo DEDICADO (en vez de reutilizar
-    #     ``grupos_subtitulos``) para separar semánticamente la revisión manual
-    #     —grupos editables— de la elección de motor —grupos ya finalizados—, ya
-    #     que un mismo Job puede atravesar ambas pausas de forma consecutiva.
+    #     si estaba activada) que se renderizarán con Remotion. Se usa un campo
+    #     DEDICADO (en vez de reutilizar ``grupos_subtitulos``) para separar
+    #     semánticamente la revisión manual —grupos editables— de la edición final
+    #     —grupos ya finalizados—, ya que un mismo Job puede atravesar ambas
+    #     pausas de forma consecutiva.
     #   - ``cortado_path`` (reutilizado): ruta del video sobre el que se
-    #     renderizarán los subtítulos al reanudar con el motor elegido.
+    #     renderizarán los subtítulos al reanudar el render final.
     grupos_finales: Optional[List[GrupoSubtitulo]] = Field(default=None)
+    # Estado de la edición de silencios en el timeline (spec
+    # edicion-avanzada-shorts, Req 1.3). Estos campos solo se rellenan cuando el
+    # Job se pausa en ESPERANDO_EDICION_SILENCIOS:
+    #   - ``unido_path``: ruta del vídeo UNIDO (pre-corte) que alimenta el
+    #     timeline y sobre el que se aplican los tramos a borrar al reanudar.
+    #   - ``silencios_detectados``: tramos de silencio detectados (a borrar),
+    #     ordenados y sin solapes, que el usuario editará en el timeline.
+    #   - ``duracion_unido_s``: duración total del vídeo unido en segundos,
+    #     necesaria para validar/normalizar los tramos y calcular el complemento.
+    unido_path: Optional[str] = Field(default=None)
+    silencios_detectados: Optional[List[TramoSilencio]] = Field(default=None)
+    duracion_unido_s: Optional[float] = Field(default=None)
+    # Textos extra tipo "hook" (spec edicion-avanzada-shorts, Req 8.1, 10.1).
+    # Se rellena al confirmar la edición final (`POST /render/{id}`) y lo consume
+    # el constructor de props del render para emitir los overlays (máx. 2).
+    textos_extra: Optional[List[TextoExtra]] = Field(default=None)
     creado_en: datetime = Field(default_factory=_ahora)
     actualizado_en: datetime = Field(default_factory=_ahora)
