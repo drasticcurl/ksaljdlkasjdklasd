@@ -259,6 +259,56 @@ class GrupoSubtitulo(BaseModel):
 
 
 # ===========================================================================
+# EDICIÓN AVANZADA DE SHORTS — Tramos de silencio y textos extra (Req 1, 13, 15)
+# ===========================================================================
+class TramoSilencio(BaseModel):
+    """Tramo ``[inicio_s, fin_s]`` (en segundos) marcado para BORRAR del vídeo
+    unido en el timeline de silencios (Req 1, 5, 15).
+
+    Los modelos son permisivos en construcción (igual que el resto de ajustes):
+    ``inicio_s``/``fin_s`` sólo se restringen a ``>= 0`` en el propio campo; la
+    invariante temporal completa (``0 <= inicio < fin <= duración``) se comprueba
+    con :func:`validar_tramos_silencio`, que conoce la duración del vídeo.
+    """
+
+    inicio_s: float = Field(ge=0.0)
+    fin_s: float = Field(ge=0.0)
+
+
+class EstiloTextoExtra(BaseModel):
+    """Estilo de un texto extra tipo "hook", INDEPENDIENTE del de los subtítulos
+    aunque comparte los mismos tipos de campo (Req 9.4, 13, 15).
+
+    Los valores por defecto siguen el diseño §4.1. Los rangos del motor se
+    validan con :func:`validar_texto_extra` reutilizando los límites de
+    subtítulos declarados en :data:`RANGOS_MOTOR`.
+    """
+
+    fuente: str = Field(default=config.DEFAULT_FUENTE)
+    tamano: int = Field(default=64)              # rango motor 12..200
+    color: str = Field(default="#FFFFFF")        # #RRGGBB
+    color_borde: str = Field(default="#000000")  # #RRGGBB
+    grosor_borde: int = Field(default=6)         # rango motor 0..20
+    negrita: bool = Field(default=True)
+    pos_vertical_pct: float = Field(default=20.0)    # 0..100 % de la altura
+    pos_horizontal_pct: float = Field(default=50.0)  # 0..100 % del ancho
+
+
+class TextoExtra(BaseModel):
+    """Overlay de texto plano SIN animación aplicado al vídeo final (Req 9, 10).
+
+    Se muestra únicamente en el intervalo ``[inicio_s, fin_s)`` sobre el vídeo ya
+    recortado/producido. Su rango temporal y su estilo se validan con
+    :func:`validar_texto_extra` (rango temporal + rangos de estilo del motor).
+    """
+
+    texto: str
+    inicio_s: float = Field(ge=0.0)
+    fin_s: float = Field(ge=0.0)
+    estilo: EstiloTextoExtra = Field(default_factory=EstiloTextoExtra)
+
+
+# ===========================================================================
 # TAREA 8 — Validación de rangos del motor y de idioma/modelo (Req 7.11, 9.1,
 # 9.6, 4.4, 5.5, 5.6, 6.2)
 # ===========================================================================
@@ -386,6 +436,25 @@ RANGOS_MOTOR: Dict[str, Tuple[float, float]] = {
     "render.combine_tokens_ms": (0, 5000),          # 0..5000 ms (Req 11.4)
 }
 
+# Rangos de estilo de los textos extra (Req 13, 15.5). Se REUTILIZAN los límites
+# del motor ya definidos para los subtítulos (misma semántica de campo) como
+# fuente única de verdad, evitando duplicar números mágicos. Estas rutas usan el
+# prefijo ``texto_extra.`` y NO son campos de :class:`Ajustes`; por eso
+# :func:`validar_ajustes` las omite (ver el guard del prefijo) y sólo las
+# consume :func:`validar_texto_extra`.
+RANGOS_MOTOR.update(
+    {
+        "texto_extra.estilo.tamano": RANGOS_MOTOR["subtitulos.tamano"],
+        "texto_extra.estilo.grosor_borde": RANGOS_MOTOR["subtitulos.grosor_borde"],
+        "texto_extra.estilo.pos_vertical_pct": RANGOS_MOTOR[
+            "subtitulos.pos_vertical_pct"
+        ],
+        "texto_extra.estilo.pos_horizontal_pct": RANGOS_MOTOR[
+            "subtitulos.pos_horizontal_pct"
+        ],
+    }
+)
+
 # Campos con conjunto/formato permitido (no numéricos por rango). Se validan de
 # forma explícita en :func:`validar_ajustes`.
 CAMPOS_CONJUNTO: Tuple[str, ...] = (
@@ -436,6 +505,10 @@ def validar_ajustes(ajustes: "Ajustes") -> List[str]:
     invalidos: List[str] = []
 
     for ruta, (minimo, maximo) in RANGOS_MOTOR.items():
+        # Los rangos de estilo de textos extra NO son campos de ``Ajustes``: son
+        # límites reutilizados por :func:`validar_texto_extra` y se omiten aquí.
+        if ruta.startswith("texto_extra."):
+            continue
         # Los campos de música solo se validan cuando hay ajustes de música.
         if ruta.startswith("musica.") and ajustes.musica is None:
             continue
@@ -491,6 +564,91 @@ def asegurar_ajustes_validos(ajustes: "Ajustes") -> "Ajustes":
     return ajustes
 
 
+# ===========================================================================
+# EDICIÓN AVANZADA DE SHORTS — Validadores de tramos de silencio y textos extra
+# (Req 5, 15; diseño §6.1 y §7.3)
+# ===========================================================================
+def _en_rango_motor(ruta: str, valor: float) -> bool:
+    """Indica si ``valor`` es numérico y está dentro del rango del motor de
+    ``ruta`` en :data:`RANGOS_MOTOR` (rangos inclusivos).
+
+    Un booleano NO se considera numérico válido (coherente con
+    :func:`validar_ajustes`).
+    """
+    minimo, maximo = RANGOS_MOTOR[ruta]
+    if isinstance(valor, bool) or not isinstance(valor, (int, float)):
+        return False
+    return minimo <= valor <= maximo
+
+
+def validar_tramos_silencio(
+    tramos: List[TramoSilencio], duracion_s: float
+) -> List[str]:
+    """Valida una lista de tramos de silencio contra la duración del vídeo unido.
+
+    Un tramo es válido si y solo si cumple ``0 <= inicio_s < fin_s <= duracion_s``
+    (Req 5.1, 15.1, 15.2). Devuelve la lista (posiblemente vacía) de
+    identificadores de los tramos inválidos con el formato ``"tramos[i]"``, donde
+    ``i`` es el índice del tramo dentro de ``tramos``. La lista está vacía si y
+    solo si todos los tramos son válidos.
+
+    :param tramos: tramos ``[inicio_s, fin_s]`` marcados para borrar.
+    :param duracion_s: duración total del vídeo unido en segundos.
+    :returns: lista de identificadores de tramos inválidos (vacía si todos válidos).
+    """
+    invalidos: List[str] = []
+    for i, tramo in enumerate(tramos):
+        if not (0.0 <= tramo.inicio_s < tramo.fin_s <= duracion_s):
+            invalidos.append(f"tramos[{i}]")
+    return invalidos
+
+
+def validar_texto_extra(t: TextoExtra, duracion_s: float) -> List[str]:
+    """Valida un texto extra: rango temporal + rangos de estilo (diseño §7.3).
+
+    Devuelve la lista (posiblemente vacía) de rutas de campo inválidas. La lista
+    está **vacía si y solo si** (bicondicional, Propiedad 8 / Req 15.4, 15.5):
+
+    * el rango temporal cumple ``0 <= inicio_s < fin_s <= duracion_s``; y
+    * cada campo de estilo está dentro de su rango del motor: ``tamano`` 12..200,
+      ``grosor_borde`` 0..20, ``pos_vertical_pct`` y ``pos_horizontal_pct``
+      0..100 (rangos reutilizados de subtítulos en :data:`RANGOS_MOTOR`); y
+    * ``color`` y ``color_borde`` tienen el formato exacto ``#RRGGBB``.
+
+    :param t: texto extra a validar.
+    :param duracion_s: duración total del vídeo cortado en segundos.
+    :returns: rutas de campo inválidas (vacía si el texto extra es válido).
+    """
+    invalidos: List[str] = []
+
+    # Rango temporal (Req 15.4). Cualquier violación (incluido NaN, que hace
+    # falsa la comparación encadenada) marca "rango_temporal".
+    if not (0.0 <= t.inicio_s < t.fin_s <= duracion_s):
+        invalidos.append("rango_temporal")
+
+    # Rangos de estilo del motor (Req 15.5), reutilizando RANGOS_MOTOR.
+    if not _en_rango_motor("texto_extra.estilo.tamano", t.estilo.tamano):
+        invalidos.append("estilo.tamano")
+    if not _en_rango_motor("texto_extra.estilo.grosor_borde", t.estilo.grosor_borde):
+        invalidos.append("estilo.grosor_borde")
+    if not _en_rango_motor(
+        "texto_extra.estilo.pos_vertical_pct", t.estilo.pos_vertical_pct
+    ):
+        invalidos.append("estilo.pos_vertical_pct")
+    if not _en_rango_motor(
+        "texto_extra.estilo.pos_horizontal_pct", t.estilo.pos_horizontal_pct
+    ):
+        invalidos.append("estilo.pos_horizontal_pct")
+
+    # Colores en formato exacto `#RRGGBB` (Req 15.5).
+    if not color_valido(t.estilo.color):
+        invalidos.append("estilo.color")
+    if not color_valido(t.estilo.color_borde):
+        invalidos.append("estilo.color_borde")
+
+    return invalidos
+
+
 __all__: List[str] = [
     "PosicionVertical",
     "PosicionHorizontal",
@@ -510,6 +668,12 @@ __all__: List[str] = [
     "Ajustes",
     "Palabra",
     "GrupoSubtitulo",
+    # Edición avanzada de shorts (tramos de silencio y textos extra)
+    "TramoSilencio",
+    "EstiloTextoExtra",
+    "TextoExtra",
+    "validar_tramos_silencio",
+    "validar_texto_extra",
     # Constantes IA / motor de render (spec subtitulos-ia-remotion)
     "SUPPORTED_OPENAI_MODELS",
     "DEFAULT_OPENAI_MODEL",

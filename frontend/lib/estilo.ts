@@ -79,3 +79,94 @@ export function ajustesConEstilo(base: Ajustes, estilo: Estilo): Ajustes {
     },
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// Proyección HERMANA para el estilo INDEPENDIENTE de los textos extra ("hook")
+// (spec edicion-avanzada-shorts, Req 10, 15.5; design §6.2).
+//
+// Los textos extra tienen su propio estilo, desacoplado del de los subtítulos,
+// pero con los MISMOS tipos de control (fuente, tamaño, colores, borde, negrita
+// y posiciones vertical/horizontal). A diferencia de la proyección de
+// subtítulos —donde el backend usa `snake_case` (`AjustesSubtitulos`) y la
+// composición `camelCase` (`Estilo`)—, aquí ambas representaciones ya están en
+// `camelCase` y comparten forma (`EstiloTextoExtra`). Aun así se mantienen dos
+// funciones espejo de `estiloDesdeAjustes` / `ajustesConEstilo` para:
+//   1) tener una única fuente de verdad de la proyección del texto extra, y
+//   2) conservar el mismo patrón e idempotencia de round-trip.
+//
+// RANGOS DEL MOTOR (documentados, no forzados aquí): `tamano` 12..200,
+// `grosorBorde` 0..20, `posVerticalPct`/`posHorizontalPct` 0..100 y colores
+// `#RRGGBB`. La proyección NO recorta ni valida: es un copiado puro de campos
+// que respeta los valores válidos sin alterarlos. La validación fuerte vive en
+// el backend (`models/settings.py: validar_texto_extra`, design §6.1/§7.3), de
+// modo que la propiedad de round-trip permanece idéntica a la de subtítulos.
+//
+// Ambas funciones son **puras**: no mutan sus entradas.
+//
+// Propiedad de round-trip (hermana de P4 del diseño):
+//   `estiloTextoExtraDesdeAjustes(ajustesTextoExtra(base, e))` es igual a `e`
+//   para todos los campos de estilo.
+// ---------------------------------------------------------------------------
+
+import type { EstiloTextoExtra as EstiloTextoExtraComposicion } from '@/components/remotion/types';
+import type { EstiloTextoExtra as EstiloTextoExtraBackend } from './types';
+
+/**
+ * Proyecta el estilo de un texto extra de la representación del backend
+ * (`EstiloTextoExtra` de `lib/types.ts`) al estilo `camelCase` que consume la
+ * composición Remotion (`EstiloTextoExtra` de `components/remotion/types.ts`).
+ *
+ * Es la hermana de `estiloDesdeAjustes` para los textos extra. Copia campo a
+ * campo, sin recortar ni validar (los valores válidos se conservan intactos;
+ * ver nota de rangos del motor arriba).
+ *
+ * @param t Estilo del texto extra en la representación del backend/dominio.
+ * @returns El estilo equivalente para la composición.
+ */
+export function estiloTextoExtraDesdeAjustes(
+  t: EstiloTextoExtraBackend,
+): EstiloTextoExtraComposicion {
+  return {
+    fuente: t.fuente,
+    tamano: t.tamano,
+    color: t.color,
+    colorBorde: t.colorBorde,
+    grosorBorde: t.grosorBorde,
+    negrita: t.negrita,
+    posVerticalPct: t.posVerticalPct,
+    posHorizontalPct: t.posHorizontalPct,
+  };
+}
+
+/**
+ * Devuelve una copia inmutable de `base` con los campos de estilo actualizados
+ * a partir de `estilo` (el estilo `camelCase` de la composición). Es la hermana
+ * de `ajustesConEstilo` para el estilo INDEPENDIENTE del texto extra.
+ *
+ * No muta `base`: usa propagación (`spread`) para crear un objeto nuevo. Como
+ * el estilo del texto extra no comparte objeto con otros ajustes, `base` aporta
+ * la forma/valores previos y `estilo` los sobreescribe; hoy todos los campos
+ * son de estilo, por lo que el `spread` de `base` es defensivo ante futuras
+ * extensiones del tipo.
+ *
+ * @param base Estilo vigente (o por defecto) sobre el que aplicar `estilo`.
+ * @param estilo Estilo visual actual del texto extra a persistir.
+ * @returns Una nueva instancia del estilo del texto extra con el estilo aplicado.
+ */
+export function ajustesTextoExtra(
+  base: EstiloTextoExtraBackend,
+  estilo: EstiloTextoExtraComposicion,
+): EstiloTextoExtraBackend {
+  return {
+    ...base,
+    fuente: estilo.fuente,
+    tamano: estilo.tamano,
+    color: estilo.color,
+    colorBorde: estilo.colorBorde,
+    grosorBorde: estilo.grosorBorde,
+    negrita: estilo.negrita,
+    posVerticalPct: estilo.posVerticalPct,
+    posHorizontalPct: estilo.posHorizontalPct,
+  };
+}

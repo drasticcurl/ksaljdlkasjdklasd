@@ -54,8 +54,12 @@ from app.engine.remotion import (
 )
 from app.engine.silence import (
     NOMBRE_CORTADO,
+    ResultadoDeteccionSilencios,
     SilenceProcessingError,
+    aplicar_tramos_borrado,
     cortar_silencios,
+    detectar_silencios,
+    segmentos_conservar_desde_borrado,
 )
 from app.engine.subtitles import (
     NOMBRE_ASS,
@@ -72,6 +76,7 @@ from app.models.settings import (
     DEFAULT_MOTOR_RENDER,
     GrupoSubtitulo,
     MotorRender,
+    TextoExtra,
 )
 from app.storage.workdir import JobWorkdir, preservar_video_final
 
@@ -92,6 +97,14 @@ ENV_SUBTITLES_FAILSOFT: str = "VSE_SUBTITLES_FAILSOFT"
 # botones) y el endpoint POST /render/{id} (tarea 8) la valida; aquí se
 # comprueba de nuevo de forma defensiva antes de despachar el render.
 _MOTORES_VALIDOS: Tuple[MotorRender, ...] = ("ass", "remotion")
+
+# Motor de render del flujo de edición avanzada de shorts (spec
+# edicion-avanzada-shorts, Req 11.2, 11.6): en este flujo se elimina la elección
+# de motor y el render es SIEMPRE con Remotion. El código ffmpeg (motor "ass")
+# permanece en el repositorio pero NO se invoca en este flujo. Este es el motor
+# por defecto que usan ``renderizar_con_motor_elegido`` y ``reanudar_pipeline``
+# al reanudar la edición final.
+MOTOR_RENDER_EDICION_FINAL: MotorRender = "remotion"
 
 
 def _env_flag_activo(nombre: str) -> bool:
@@ -193,6 +206,24 @@ class ResultadoPipeline:
     # y 8) y ``grupos`` contiene los grupos ya definitivos. En este caso ``exito``
     # es ``False`` (aún no hay Video_Final).
     pendiente_eleccion_render: bool = False
+    # Pausa por edición manual de silencios en el timeline (spec
+    # edicion-avanzada-shorts, Req 1.1, 1.2, 1.3, 1.4): cuando
+    # ``pendiente_edicion_silencios`` es ``True`` el pipeline, tras UNIR, detectó
+    # los tramos de silencio sobre el vídeo **unido** (sin recortar) y se detuvo a
+    # la espera de que el usuario los edite en el timeline y confirme con
+    # ``POST /silencios/{id}``. Es una pausa PREVIA a la transcripción. En este
+    # caso ``exito`` es ``False`` (aún no hay vídeo cortado ni final) y se
+    # rellenan los tres artefactos que el Gestor de Jobs persistirá con
+    # ``marcar_esperando_edicion_silencios`` (tarea 4.3):
+    #   * ``unido``: ruta del vídeo unido (pre-corte) que alimenta el timeline y
+    #     sobre el que se aplicarán los tramos a borrar al reanudar.
+    #   * ``silencios``: tramos de silencio detectados (a BORRAR) ``(inicio, fin)``
+    #     en segundos, ordenados y sin solapes (posiblemente vacía, Req 1.4).
+    #   * ``duracion_unido_s``: duración total del vídeo unido en segundos.
+    pendiente_edicion_silencios: bool = False
+    unido: Optional[Path] = None
+    silencios: Optional[List[Tuple[float, float]]] = None
+    duracion_unido_s: Optional[float] = None
 
 
 def ejecutar_pipeline(
@@ -208,12 +239,14 @@ def ejecutar_pipeline(
     existe_salida: Optional[Callable[[Path], bool]] = None,
     # Pasos inyectables (por defecto, las implementaciones reales del motor).
     fn_unir: Callable[..., Path] = unir_clips,
+    fn_detectar: Callable[..., ResultadoDeteccionSilencios] = detectar_silencios,
     fn_cortar: Callable[..., Path] = cortar_silencios,
     fn_transcribir: Callable[..., List[Any]] = transcribir,
     fn_risas: Callable[..., Any] = eliminar_risas,
     fn_subtitulos: Callable[..., Path] = generar_y_quemar_subtitulos,
     fn_musica: Callable[..., Path] = mezclar_musica,
     fn_preservar: Callable[[JobWorkdir, Any], Path] = preservar_video_final,
+    **_inyecciones_ignoradas: Any,
 ) -> ResultadoPipeline:
     """Ejecuta los cinco pasos del pipeline en orden estricto (Req 3-8, 10.5, 10.7).
 
@@ -237,11 +270,25 @@ def ejecutar_pipeline(
         runner: Ejecutor de comandos externos inyectable.
         inspector: Inspector de clips (ffprobe) inyectable para el Paso 1.
         existe_salida: Predicado de existencia del subtitulado (Paso 4) inyectable.
-        fn_unir/fn_cortar/fn_transcribir/fn_subtitulos/fn_musica/fn_preservar:
-            Implementaciones de cada paso, inyectables para pruebas.
+        fn_unir/fn_detectar/fn_cortar/fn_transcribir/fn_subtitulos/fn_musica/fn_preservar:
+            Implementaciones de cada paso, inyectables para pruebas. ``fn_detectar``
+            es la detección de silencios de la FASE A (Req 1.1); ``fn_cortar`` se
+            conserva por compatibilidad de firma pero ya no se usa en este flujo
+            (el corte se aplica al reanudar, en :func:`reanudar_desde_silencios`).
+        **_inyecciones_ignoradas: Inyecciones adicionales de pasos POSTERIORES a
+            la pausa (p. ej. ``fn_aplicar`` de la FASE B o ``fn_remotion`` del
+            render) que esta fase inicial **ignora**. Es un cambio ADITIVO y
+            seguro —coherente con :func:`reanudar_desde_silencios` y
+            :func:`reanudar_pipeline`, que ya aceptan e ignoran inyecciones extra—
+            que permite reenviar UN ÚNICO conjunto de inyecciones desde el Gestor
+            de Jobs (un solo :class:`~app.jobs.runner.JobRunner`) a lo largo de
+            todo el flujo con pausas sin error. No altera ningún comportamiento de
+            producción.
 
     Returns:
-        :class:`ResultadoPipeline` con el resultado global.
+        :class:`ResultadoPipeline` con el resultado global. Puede señalizar la
+        pausa de edición de silencios (``pendiente_edicion_silencios=True``, spec
+        edicion-avanzada-shorts, Req 1.2) tras la detección.
     """
     job.create()
 
@@ -269,51 +316,145 @@ def ejecutar_pipeline(
     _reportar(reporter, JobStatus.EN_EJECUCION, 1, PipelineStep.UNIR, fin,
               "Clips unidos")
 
-    # -------------------- Paso 2: CORTAR_SILENCIOS --------------------
+    # -------------------- Paso 2: CORTAR_SILENCIOS — FASE A (detección) --------
+    # El paso CORTAR_SILENCIOS se parte en dos fases (spec edicion-avanzada-shorts,
+    # Req 1.1, 1.2, 1.5, diseño §7.2):
+    #
+    #   * FASE A (aquí, antes de la pausa): si los silencios están ACTIVADOS, se
+    #     DETECTAN los tramos sobre el vídeo **unido** SIN recortarlo y el pipeline
+    #     se DETIENE devolviendo ``pendiente_edicion_silencios=True`` para que el
+    #     usuario los edite en el timeline. Si están DESACTIVADOS, no hay pausa: el
+    #     vídeo cortado es el propio unido (no-op) y se continúa a TRANSCRIBIR
+    #     (Req 1.5).
+    #   * FASE B (aplicación): al confirmar los tramos editados, el corte se
+    #     reconstruye en :func:`reanudar_desde_silencios`, que continúa el flujo.
     inicio, fin = RANGOS_PASOS[PipelineStep.CORTAR_SILENCIOS]
+
+    if not ajustes.silencios.activado:
+        # Req 1.5: silencios desactivados → sin pausa; el "cortado" es el unido
+        # (no-op) y el pipeline continúa directamente a TRANSCRIBIR.
+        logger.info(
+            "Silencios desactivados: se continúa a TRANSCRIBIR con el vídeo "
+            "unido, sin pausa de edición (Req 1.5)"
+        )
+        _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
+                  fin, "Corte de silencios desactivado")
+        return _continuar_desde_transcribir(
+            job,
+            unido,
+            ajustes,
+            api_key=api_key,
+            reporter=reporter,
+            runner=runner,
+            fn_transcribir=fn_transcribir,
+            fn_risas=fn_risas,
+        )
+
+    # Silencios ACTIVADOS: detectar los tramos SIN recortar (Req 1.1) y pausar.
     _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
-              inicio, "Cortando silencios")
-    # Método de corte: "voz" usa el motor VAD (IA); "db" mantiene el motor por
-    # defecto. Solo se pasa ``engine`` cuando es "voz", para no romper los dobles
-    # de test que no aceptan el kwarg.
-    cortar_kwargs: Dict[str, Any] = {
-        "activado": ajustes.silencios.activado,
-        "umbral_db": ajustes.silencios.umbral_db,
-        "margen_ms": ajustes.silencios.margen_ms,
-        "runner": runner,
-    }
-    if getattr(ajustes.silencios, "modo", "db") == "voz":
-        cortar_kwargs["engine"] = "vad"
+              inicio, "Detectando silencios")
+    # Método de detección: "voz" usa el motor VAD (IA); cualquier otro valor usa
+    # el umbral de dB ("db"). El margen NO se aplica en la detección (se aplica al
+    # calcular los segmentos a conservar durante la aplicación del corte).
+    modo_deteccion = "voz" if getattr(ajustes.silencios, "modo", "db") == "voz" else "db"
     try:
-        cortado = fn_cortar(unido, job.resolve(NOMBRE_CORTADO), **cortar_kwargs)
+        deteccion = fn_detectar(
+            unido,
+            umbral_db=ajustes.silencios.umbral_db,
+            margen_ms=ajustes.silencios.margen_ms,
+            modo=modo_deteccion,
+            runner=runner,
+        )
     except SilenceProcessingError as exc:
-        # Fail-soft OPCIONAL (VSE_SILENCE_FAILSOFT): si auto-editor falla, se
-        # continúa el pipeline SIN recortar, usando el video de entrada del paso
-        # (el unido) como si fuera el cortado. Solo aplica a este paso.
+        # Fail-soft OPCIONAL (VSE_SILENCE_FAILSOFT): si la detección falla, se
+        # continúa el pipeline SIN pausa ni recorte, usando el vídeo unido como
+        # cortado. Solo aplica a este paso.
         if _silence_failsoft_activo():
             logger.warning(
-                "Cortar silencios falló; se continúa sin recortar "
+                "Detección de silencios falló; se continúa sin recortar "
                 "(%s): %s",
                 ENV_SILENCE_FAILSOFT,
                 exc,
             )
-            cortado = unido
-            _reportar(
-                reporter,
-                JobStatus.EN_EJECUCION,
-                2,
-                PipelineStep.CORTAR_SILENCIOS,
-                fin,
-                "Corte de silencios omitido tras fallo (fail-soft)",
+            _reportar(reporter, JobStatus.EN_EJECUCION, 2,
+                      PipelineStep.CORTAR_SILENCIOS, fin,
+                      "Detección de silencios omitida tras fallo (fail-soft)")
+            return _continuar_desde_transcribir(
+                job,
+                unido,
+                ajustes,
+                api_key=api_key,
+                reporter=reporter,
+                runner=runner,
+                fn_transcribir=fn_transcribir,
+                fn_risas=fn_risas,
             )
-        else:
-            # Comportamiento por defecto (Req 10.7): el Job pasa a fallido.
-            return _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
+        # Comportamiento por defecto (Req 10.7): el Job pasa a fallido.
+        return _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
     except Exception as exc:  # noqa: BLE001
         return _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
-    else:
-        _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
-                  fin, "Silencios recortados")
+
+    # PAUSA (Req 1.2, 1.3, 1.4): se registra en el borde inferior del rango
+    # CORTAR_SILENCIOS (25 %). Se devuelven los tres artefactos que el Gestor de
+    # Jobs persistirá con ``marcar_esperando_edicion_silencios`` (tarea 4.3). La
+    # lista de tramos puede ser vacía si no se detectó ningún silencio (Req 1.4).
+    _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
+              inicio, "Esperando edición manual de silencios")
+    logger.info(
+        "Pipeline en pausa para edición manual de silencios "
+        "(%d tramos, duración %.3f s)",
+        len(deteccion.silencios),
+        deteccion.duracion,
+    )
+    return ResultadoPipeline(
+        exito=False,
+        pendiente_edicion_silencios=True,
+        unido=Path(unido),
+        silencios=list(deteccion.silencios),
+        duracion_unido_s=deteccion.duracion,
+    )
+
+
+def _continuar_desde_transcribir(
+    job: JobWorkdir,
+    cortado: Union[str, Path],
+    ajustes: Ajustes,
+    *,
+    api_key: Optional[str] = None,
+    reporter: ReporteProgreso = _reporter_noop,
+    runner: Runner = ejecutar_comando,
+    fn_transcribir: Callable[..., List[Any]] = transcribir,
+    fn_risas: Callable[..., Any] = eliminar_risas,
+) -> ResultadoPipeline:
+    """Continúa el pipeline desde TRANSCRIBIR sobre un vídeo ya ``cortado``.
+
+    Es la parte común del flujo a partir del vídeo cortado (con o sin corte de
+    silencios aplicado): TRANSCRIBIR → (quitar risas, opcional) → pausa de
+    revisión manual de subtítulos **o** preparación de grupos finales
+    (:func:`preparar_grupos_y_pausar`). La usan tanto :func:`ejecutar_pipeline`
+    (cuando los silencios están desactivados, Req 1.5) como
+    :func:`reanudar_desde_silencios` (tras aplicar los tramos a borrar
+    confirmados por el usuario, Req 5.7). Reutiliza los artefactos ya generados y
+    **no regenera** los pasos anteriores (Req 16.1, 16.3).
+
+    Args:
+        job: Directorio de trabajo del Job (contención de temporales).
+        cortado: Ruta del vídeo a transcribir (unido sin corte, o ya recortado).
+        ajustes: Conjunto completo de ajustes del pipeline.
+        api_key: Clave transitoria de OpenAI para el sub-paso de IA (nunca se
+            registra en logs).
+        reporter: Callback de progreso inyectable (Req 10.5).
+        runner: Ejecutor de comandos externos inyectable.
+        fn_transcribir: Implementación de la transcripción, inyectable.
+        fn_risas: Implementación del recorte de risas, inyectable.
+
+    Returns:
+        :class:`ResultadoPipeline` señalizando la pausa de revisión
+        (``pendiente_revision=True``) o la de edición final
+        (``pendiente_eleccion_render=True``, marcada como
+        ``ESPERANDO_EDICION_FINAL`` por el Gestor de Jobs).
+    """
+    cortado_path: Union[str, Path] = Path(cortado)
 
     # -------------------- Paso 3: TRANSCRIBIR --------------------
     inicio, fin = RANGOS_PASOS[PipelineStep.TRANSCRIBIR]
@@ -321,7 +462,8 @@ def ejecutar_pipeline(
               inicio, "Transcribiendo audio")
     try:
         palabras = fn_transcribir(
-            cortado, ajustes.transcripcion, job.resolve(NOMBRE_AUDIO), runner=runner
+            cortado_path, ajustes.transcripcion, job.resolve(NOMBRE_AUDIO),
+            runner=runner,
         )
     except Exception as exc:  # noqa: BLE001
         return _fallo(reporter, 3, PipelineStep.TRANSCRIBIR, exc, inicio)
@@ -336,8 +478,8 @@ def ejecutar_pipeline(
         _reportar(reporter, JobStatus.EN_EJECUCION, 3, PipelineStep.TRANSCRIBIR,
                   fin, "Quitando risas")
         try:
-            cortado, palabras = fn_risas(
-                cortado,
+            cortado_path, palabras = fn_risas(
+                cortado_path,
                 job.resolve(NOMBRE_SIN_RISAS),
                 palabras,
                 margen_ms=ajustes.risas.margen_ms,
@@ -349,14 +491,14 @@ def ejecutar_pipeline(
     # -------------------- Pausa opcional: revisión manual de subtítulos -------
     # Si el usuario pidió revisar los subtítulos, el pipeline se detiene aquí
     # (tras la transcripción): agrupa las palabras y devuelve los grupos para que
-    # se editen. La fase 2 (quemar subtítulos + música) se ejecuta al reanudar
-    # con :func:`reanudar_pipeline`.
+    # se editen. La continuación (preparar grupos + edición final) se ejecuta al
+    # reanudar con :func:`reanudar_pipeline`.
     #
     # EXCEPCIÓN: si la corrección con IA está activada (``revision_ia.activado``),
     # la revisión manual se OMITE aunque ``revisar`` esté activo. En ese caso el
     # flujo se automatiza: la IA corrige los grupos y el pipeline continúa
     # directamente a ``preparar_grupos_y_pausar`` (que aplica la corrección IA y
-    # pausa en la elección del motor de render), sin la pausa de edición manual.
+    # pausa en la edición final), sin la pausa de edición manual.
     if ajustes.subtitulos.revisar and not ajustes.revision_ia.activado:
         grupos_revision = agrupar(palabras, ajustes.subtitulos.max_palabras)
         logger.info(
@@ -366,28 +508,135 @@ def ejecutar_pipeline(
         return ResultadoPipeline(
             exito=False,
             pendiente_revision=True,
-            cortado=Path(cortado),
+            cortado=Path(cortado_path),
             grupos=grupos_revision,
         )
 
     # -------------------- Parte A del paso SUBTITULOS: preparar y PAUSAR --------
-    # En lugar de renderizar automáticamente con ASS (comportamiento previo), el
-    # pipeline prepara los ``grupos_finales`` (agrupación + corrección IA
-    # opcional, usando la ``api_key`` transitoria) y se **detiene** en
-    # ESPERANDO_ELECCION_RENDER a la espera de que el usuario elija manualmente el
-    # motor de render (spec subtitulos-ia-remotion, Req 6.1, 6.4). La **Parte B**
-    # (render con EXACTAMENTE el motor elegido, sin fallback) la ejecuta la
-    # reanudación (:func:`reanudar_pipeline`) que dispara ``POST /render/{id}``
-    # (tarea 8). El Gestor de Jobs persiste esta pausa con
-    # ``marcar_esperando_eleccion_render`` y NO limpia el workdir (los
-    # intermedios se necesitan al reanudar el render).
+    # El pipeline prepara los ``grupos_finales`` (agrupación + corrección IA
+    # opcional, usando la ``api_key`` transitoria) y se **detiene** en la edición
+    # final (ESPERANDO_EDICION_FINAL) a la espera de que el usuario ajuste la
+    # previsualización y añada los textos extra, confirmando con
+    # ``POST /render/{id}`` (spec edicion-avanzada-shorts, Req 8.1). La Parte B
+    # (render SIEMPRE con Remotion) la ejecuta la reanudación
+    # (:func:`reanudar_pipeline`). El Gestor de Jobs persiste esta pausa con
+    # ``marcar_esperando_edicion_final`` y NO limpia el workdir (los intermedios
+    # se necesitan al reanudar el render).
     return preparar_grupos_y_pausar(
-        cortado,
+        cortado_path,
         ajustes,
         palabras=palabras,
         grupos=None,
         api_key=api_key,
         reporter=reporter,
+    )
+
+
+def reanudar_desde_silencios(
+    job: JobWorkdir,
+    unido: Union[str, Path],
+    tramos_editados: Sequence[Tuple[float, float]],
+    duracion_unido_s: float,
+    ajustes: Ajustes,
+    *,
+    api_key: Optional[str] = None,
+    reporter: ReporteProgreso = _reporter_noop,
+    runner: Runner = ejecutar_comando,
+    fn_aplicar: Callable[..., Path] = aplicar_tramos_borrado,
+    fn_transcribir: Callable[..., List[Any]] = transcribir,
+    fn_risas: Callable[..., Any] = eliminar_risas,
+    **_inyecciones_ignoradas: Any,
+) -> ResultadoPipeline:
+    """Reanuda el pipeline tras la pausa de edición manual de silencios (FASE B).
+
+    Es la continuación de :func:`ejecutar_pipeline` cuando el Job estaba pausado
+    en ``ESPERANDO_EDICION_SILENCIOS`` (spec edicion-avanzada-shorts, Req 5.5,
+    5.6, 5.7, 5.8): a partir del vídeo **unido** y de los ``tramos_editados`` que
+    el usuario confirmó con ``POST /silencios/{id}``:
+
+    1. Reconstruye el vídeo **cortado** con :func:`aplicar_tramos_borrado`, que
+       calcula internamente los segmentos a conservar mediante
+       :func:`segmentos_conservar_desde_borrado` (complemento de los tramos a
+       borrar, fusionando solapados/adyacentes y garantizando que nunca queda un
+       vídeo de 0 s — caso D-VACIO, Req 5.5, 5.6, 5.8) y recorta con ffmpeg.
+    2. Continúa el pipeline hacia TRANSCRIBIR → SUBTÍTULOS → (pausa de revisión)
+       → edición final, reutilizando :func:`_continuar_desde_transcribir` y
+       **sin regenerar** los artefactos ya completados (UNIR/detección, Req 16.1,
+       16.3).
+
+    La firma es coherente con :func:`reanudar_pipeline`: recibe el ``job``
+    (workdir), el vídeo de entrada, los datos persistidos durante la pausa
+    (``duracion_unido_s``) y los ``ajustes``. El ``unido`` y la ``duracion`` los
+    aporta el Gestor de Jobs desde el :class:`JobState` (``unido_path`` y
+    ``duracion_unido_s``) al lanzar la reanudación (tarea 4.3).
+
+    Args:
+        job: Directorio de trabajo del Job (no se limpia durante la pausa).
+        unido: Ruta del vídeo unido (pre-corte) sobre el que se aplican los cortes.
+        tramos_editados: Tramos a BORRAR ``(inicio, fin)`` confirmados por el
+            usuario (posiblemente vacíos → no se borra nada).
+        duracion_unido_s: Duración total del vídeo unido en segundos (persistida
+            en la pausa), necesaria para calcular el complemento.
+        ajustes: Conjunto completo de ajustes del pipeline.
+        api_key: Clave transitoria de OpenAI para el sub-paso de IA (nunca se
+            registra en logs).
+        reporter: Callback de progreso inyectable (Req 10.5).
+        runner: Ejecutor de comandos externos inyectable.
+        fn_aplicar: Implementación de la aplicación del corte, inyectable.
+        fn_transcribir: Implementación de la transcripción, inyectable.
+        fn_risas: Implementación del recorte de risas, inyectable.
+        **_inyecciones_ignoradas: Inyecciones adicionales de pasos posteriores
+            (p. ej. ``fn_subtitulos``, ``fn_remotion``) que este punto de entrada
+            **ignora**, para poder reenviar el mismo conjunto de inyecciones del
+            Gestor de Jobs sin error.
+
+    Returns:
+        :class:`ResultadoPipeline` señalizando la siguiente pausa (revisión de
+        subtítulos o edición final) o un fallo si la aplicación del corte falla.
+
+    Raises:
+        KeyError: nunca directamente; los fallos de recorte se traducen a un
+            :class:`ResultadoPipeline` sin éxito (Req 16.6).
+    """
+    unido_path = Path(unido)
+
+    # -------------------- Paso 2: CORTAR_SILENCIOS — FASE B (aplicación) -------
+    # La detección (FASE A) reportó en 25 %; la aplicación continúa dentro del
+    # rango CORTAR_SILENCIOS (25–40 %). Se reconstruye el vídeo cortado a partir
+    # del complemento de los tramos a borrar; los segmentos a conservar los
+    # calcula ``aplicar_tramos_borrado`` internamente vía
+    # ``segmentos_conservar_desde_borrado`` (Req 5.5, 5.6, 5.8).
+    inicio, fin = RANGOS_PASOS[PipelineStep.CORTAR_SILENCIOS]
+    medio = inicio + (fin - inicio) // 2  # ~30 %
+    _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
+              medio, "Aplicando cortes de silencio")
+    try:
+        cortado = fn_aplicar(
+            unido_path,
+            job.resolve(NOMBRE_CORTADO),
+            list(tramos_editados),
+            float(duracion_unido_s),
+            runner=runner,
+        )
+    except SilenceProcessingError as exc:
+        # Fallo al recortar (Req 16.6, diseño §10): el Job pasa a FALLIDO en
+        # CORTAR_SILENCIOS con motivo accionable, conservando el workdir.
+        return _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
+    except Exception as exc:  # noqa: BLE001
+        return _fallo(reporter, 2, PipelineStep.CORTAR_SILENCIOS, exc, inicio)
+    _reportar(reporter, JobStatus.EN_EJECUCION, 2, PipelineStep.CORTAR_SILENCIOS,
+              fin, "Silencios recortados")
+
+    # Continuar el flujo secuencial: TRANSCRIBIR → SUBTÍTULOS → edición final.
+    return _continuar_desde_transcribir(
+        job,
+        cortado,
+        ajustes,
+        api_key=api_key,
+        reporter=reporter,
+        runner=runner,
+        fn_transcribir=fn_transcribir,
+        fn_risas=fn_risas,
     )
 
 
@@ -505,10 +754,11 @@ def renderizar_con_motor_elegido(
     job: JobWorkdir,
     cortado: Union[str, Path],
     ajustes: Ajustes,
-    motor: MotorRender = DEFAULT_MOTOR_RENDER,
+    motor: MotorRender = MOTOR_RENDER_EDICION_FINAL,
     *,
     palabras: Optional[List[Any]] = None,
     grupos: Optional[List[GrupoSubtitulo]] = None,
+    textos_extra: Sequence[TextoExtra] = (),
     runner: Runner = ejecutar_comando,
     existe_salida: Optional[Callable[[Path], bool]] = None,
     fn_subtitulos: Callable[..., Path] = generar_y_quemar_subtitulos,
@@ -544,9 +794,15 @@ def renderizar_con_motor_elegido(
         cortado: Ruta del video (silencios recortados) a renderizar. Inmutable
             (la salida es un archivo distinto, Req 13.1).
         ajustes: Conjunto completo de ajustes (subtítulos, resolución, fps, render).
-        motor: Motor de render elegido por el usuario (``"ass"`` | ``"remotion"``).
+        motor: Motor de render (``"ass"`` | ``"remotion"``). Por defecto
+            ``"remotion"`` (:data:`MOTOR_RENDER_EDICION_FINAL`): en el flujo de
+            edición avanzada de shorts el render es SIEMPRE con Remotion y el
+            código ffmpeg (motor ``"ass"``) permanece pero no se invoca (Req 11.2,
+            11.6).
         palabras: Palabras transcritas (para agrupar si ``grupos`` es ``None``).
         grupos: Grupos de subtítulo ya construidos/editados (opcional).
+        textos_extra: Overlays de texto plano tipo "hook" (0..2) que se propagan
+            al render Remotion (Req 10.2). Se ignoran con el motor ``"ass"``.
         runner: Ejecutor de comandos externos inyectable.
         existe_salida: Predicado de existencia del artefacto de salida inyectable.
         fn_subtitulos: Implementación del quemado ASS, inyectable para pruebas.
@@ -604,6 +860,10 @@ def renderizar_con_motor_elegido(
             existe_salida=existe_salida,
             combine_tokens_ms=ajustes.render.combine_tokens_ms,
             video_url=video_url,
+            # Overlays de texto plano tipo "hook" (spec edicion-avanzada-shorts,
+            # Req 10.2): se propagan al render para que ``construir_props`` los
+            # emita en ``props["textosExtra"]``.
+            textos_extra=textos_extra,
         )
 
     # motor == "ass": quemado ASS con ffmpeg/libass (comportamiento previo).
@@ -657,7 +917,8 @@ def reanudar_pipeline(
     *,
     palabras: Optional[List[Any]] = None,
     grupos: Optional[List[GrupoSubtitulo]] = None,
-    motor: MotorRender = DEFAULT_MOTOR_RENDER,
+    textos_extra: Sequence[TextoExtra] = (),
+    motor: MotorRender = MOTOR_RENDER_EDICION_FINAL,
     musica_wav: Optional[str] = None,
     reporter: ReporteProgreso = _reporter_noop,
     runner: Runner = ejecutar_comando,
@@ -684,9 +945,12 @@ def reanudar_pipeline(
 
     El render del paso SUBTITULOS se delega en :func:`renderizar_con_motor_elegido`,
     que ejecuta **exactamente** el motor indicado por ``motor`` **sin fallback**
-    (Req 7.1-7.4). Por compatibilidad hacia atrás ``motor`` es ``"ass"`` por
-    defecto, de modo que el flujo normal y la reanudación de la revisión manual
-    (y sus tests) se comportan igual que antes.
+    (Req 7.1-7.4). En el flujo de edición avanzada de shorts el render es SIEMPRE
+    con Remotion, por lo que ``motor`` es ``"remotion"`` por defecto
+    (:data:`MOTOR_RENDER_EDICION_FINAL`, Req 11.2, 11.6); los ``textos_extra``
+    persistidos se propagan al render Remotion (Req 10.2). El código ffmpeg (motor
+    ``"ass"``) permanece pero no se invoca en este flujo (los llamadores que aún
+    lo necesiten pueden pasar ``motor="ass"`` explícitamente).
 
     Reporta el progreso desde el paso SUBTITULOS (70 %) hasta el 100 % y respeta
     el modo fail-soft de subtítulos (``VSE_SUBTITLES_FAILSOFT``, solo para el
@@ -706,8 +970,10 @@ def reanudar_pipeline(
         ajustes: Conjunto completo de ajustes.
         palabras: Palabras transcritas (para agrupar si ``grupos`` es ``None``).
         grupos: Grupos de subtítulo ya construidos/editados (opcional).
-        motor: Motor de render elegido (``"ass"`` por defecto; ``"remotion"`` para
-            el render programático). Ver :func:`renderizar_con_motor_elegido`.
+        textos_extra: Overlays de texto plano tipo "hook" (0..2) persistidos en la
+            edición final, que se propagan al render Remotion (Req 10.2).
+        motor: Motor de render (``"remotion"`` por defecto; ``"ass"`` disponible
+            por compatibilidad). Ver :func:`renderizar_con_motor_elegido`.
         musica_wav: Ruta del WAV de música, o ``None`` para omitir el paso 5.
         reporter: Callback de progreso inyectable (Req 10.5).
         runner: Ejecutor de comandos externos inyectable.
@@ -742,6 +1008,7 @@ def reanudar_pipeline(
             motor,
             palabras=palabras_seq,
             grupos=grupos,
+            textos_extra=textos_extra,
             runner=runner,
             existe_salida=existe_salida,
             fn_subtitulos=fn_subtitulos,
@@ -880,10 +1147,12 @@ __all__ = [
     "ORDEN_PASOS",
     "ENV_SILENCE_FAILSOFT",
     "ENV_SUBTITLES_FAILSOFT",
+    "MOTOR_RENDER_EDICION_FINAL",
     "EventoProgreso",
     "ReporteProgreso",
     "ResultadoPipeline",
     "ejecutar_pipeline",
+    "reanudar_desde_silencios",
     "preparar_grupos_y_pausar",
     "renderizar_con_motor_elegido",
     "reanudar_pipeline",

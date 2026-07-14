@@ -24,9 +24,12 @@ import type {
   ProcesarRequest,
   ProcesarResponse,
   RenderEleccion,
+  SilenciosEdicion,
   SubirClipsResponse,
   SubirMusicaResponse,
   SubtitulosRevision,
+  TextoExtra,
+  TramoSilencio,
 } from './types';
 
 /** URL base del backend; configurable por variable de entorno pública. */
@@ -330,6 +333,63 @@ export async function enviarSubtitulos(
 }
 
 // ---------------------------------------------------------------------------
+// GET/POST /silencios/{id} — Timeline de edición de silencios
+// (spec edicion-avanzada-shorts, design §5.1, §5.2; Req 2.1, 5.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Obtiene los tramos de silencio detectados (a BORRAR) junto con los datos del
+ * vídeo UNIDO (pre-corte) para montar el timeline de edición (design §5.1).
+ *
+ * Es de solo lectura: si el Job no está en `esperando_edicion_silencios`, el
+ * backend devuelve `editable=false` y los tramos disponibles (posiblemente
+ * vacíos). Lanza :class:`ApiError` con `JOB_NOT_FOUND` (404) si el Job no
+ * existe.
+ */
+export async function obtenerSilencios(
+  jobId: string,
+  opciones: { baseUrl?: string; signal?: AbortSignal } = {},
+): Promise<SilenciosEdicion> {
+  const res = await fetchConTimeout(
+    buildUrl(`/silencios/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    { method: 'GET', signal: opciones.signal },
+  );
+  return parseJsonOrThrow<SilenciosEdicion>(res);
+}
+
+/**
+ * Envía los tramos de silencio (a BORRAR) editados por el usuario y reanuda el
+ * pipeline (aplica el corte y continúa a TRANSCRIBIR) (design §5.2).
+ *
+ * El cuerpo es `{ tramos }`, con cada tramo en SEGUNDOS (`inicio_s`/`fin_s`),
+ * exactamente como el tipo {@link TramoSilencio} del frontend: no hay conversión
+ * de unidades porque el contrato del timeline ya opera en segundos.
+ *
+ * Respuesta `202` con `{ job_id, estado: "en_ejecucion" }`. Errores del backend:
+ * `404 JOB_NOT_FOUND`, `409 CONFLICT` (Job fuera de la pausa de silencios) o
+ * `400 INVALID_REQUEST` (algún tramo con `fin_s <= inicio_s` o fuera de
+ * `[0, duracion_unido_s]`).
+ */
+export async function enviarSilencios(
+  jobId: string,
+  tramos: TramoSilencio[],
+  opciones: { baseUrl?: string } = {},
+): Promise<ProcesarResponse> {
+  const res = await fetchConTimeout(
+    buildUrl(`/silencios/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // El backend espera los tramos en segundos, idénticos a `TramoSilencio`.
+      body: JSON.stringify({
+        tramos: tramos.map((t) => ({ inicio_s: t.inicio_s, fin_s: t.fin_s })),
+      }),
+    },
+  );
+  return parseJsonOrThrow<ProcesarResponse>(res);
+}
+
+// ---------------------------------------------------------------------------
 // GET/POST /render/{id} — Elección manual del motor de render
 // (spec subtitulos-ia-remotion, Req 6.2, 6.3, 7.1, 7.2)
 // ---------------------------------------------------------------------------
@@ -353,6 +413,11 @@ export async function obtenerRender(
 /**
  * Elige el motor de render (`ass` o `remotion`) y reanuda el pipeline. Ejecuta
  * exactamente el motor elegido (sin fallback automático).
+ *
+ * @deprecated En el flujo de `edicion-avanzada-shorts` el render es SIEMPRE
+ * Remotion y la elección de motor se elimina de la interfaz; usa
+ * {@link confirmarRenderFinal} para confirmar la etapa final con textos extra.
+ * Se conserva por compatibilidad con las piezas todavía no migradas.
  */
 export async function elegirRender(
   jobId: string,
@@ -365,6 +430,92 @@ export async function elegirRender(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ motor }),
+    },
+  );
+  return parseJsonOrThrow<ProcesarResponse>(res);
+}
+
+/**
+ * Forma en la que el backend (`POST /render/{id}`) espera cada texto extra:
+ * SEGUNDOS (`inicio_s`/`fin_s`) y estilo en `snake_case` (design §5.6, §7.3).
+ * Es el "espejo" del tipo {@link TextoExtra} del frontend, que usa milisegundos
+ * (`inicioMs`/`finMs`) y estilo en `camelCase`.
+ */
+interface TextoExtraBackend {
+  texto: string;
+  inicio_s: number;
+  fin_s: number;
+  estilo: {
+    fuente: string;
+    tamano: number;
+    color: string;
+    color_borde: string;
+    grosor_borde: number;
+    negrita: boolean;
+    pos_vertical_pct: number;
+    pos_horizontal_pct: number;
+  };
+}
+
+/**
+ * Convierte un {@link TextoExtra} del frontend (camelCase + milisegundos) al
+ * contrato del backend (snake_case + segundos) que consume `POST /render/{id}`.
+ *
+ * DECISIÓN SOBRE LA CONVERSIÓN DE UNIDADES (ms → s): el rango temporal se
+ * expresa en el frontend en milisegundos **enteros** (`inicioMs`/`finMs`), por
+ * lo que basta dividir entre 1000 para obtener los segundos del backend. La
+ * división es EXACTA para este caso de uso (los ms provienen de controles en
+ * segundos multiplicados por 1000) y NO requiere redondeo, a diferencia del
+ * sentido inverso (segundos → ms) que sí usa banker's rounding
+ * (`redondearMitadAPar`) para casar con `round()` de Python. El mapeo inverso
+ * para la previsualización lo cubre la tarea 8.1 (`textosExtraBackendARemotion`).
+ */
+function textoExtraARemotionBackend(t: TextoExtra): TextoExtraBackend {
+  return {
+    texto: t.texto,
+    inicio_s: t.inicioMs / 1000,
+    fin_s: t.finMs / 1000,
+    estilo: {
+      fuente: t.estilo.fuente,
+      tamano: t.estilo.tamano,
+      color: t.estilo.color,
+      // camelCase (frontend) → snake_case (backend).
+      color_borde: t.estilo.colorBorde,
+      grosor_borde: t.estilo.grosorBorde,
+      negrita: t.estilo.negrita,
+      pos_vertical_pct: t.estilo.posVerticalPct,
+      pos_horizontal_pct: t.estilo.posHorizontalPct,
+    },
+  };
+}
+
+/**
+ * Confirma la etapa final (`esperando_edicion_final`) enviando los textos extra
+ * tipo "hook" y reanuda el render, que es **siempre Remotion** (design §5.6). No
+ * se envía el campo `motor`: el backend usa `remotion` por defecto y la UI ya no
+ * ofrece elección de motor (spec edicion-avanzada-shorts, Req 11).
+ *
+ * El cuerpo es `{ textos_extra: [...] }`, con cada texto ya convertido de
+ * camelCase(ms) a snake_case(segundos) mediante {@link textoExtraARemotionBackend}.
+ * Se admiten como máximo 2 textos (el backend valida el límite y los rangos).
+ *
+ * Respuesta `202`. Errores del backend: `404 JOB_NOT_FOUND`, `409 CONFLICT` (Job
+ * fuera de `esperando_edicion_final`) o `400 INVALID_REQUEST` (más de 2 textos,
+ * rango temporal inválido o estilo fuera de rango).
+ */
+export async function confirmarRenderFinal(
+  jobId: string,
+  textosExtra: TextoExtra[],
+  opciones: { baseUrl?: string } = {},
+): Promise<ProcesarResponse> {
+  const res = await fetchConTimeout(
+    buildUrl(`/render/${encodeURIComponent(jobId)}`, opciones.baseUrl),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        textos_extra: textosExtra.map(textoExtraARemotionBackend),
+      }),
     },
   );
   return parseJsonOrThrow<ProcesarResponse>(res);
@@ -442,4 +593,59 @@ export async function descargarVideo(
     return parseJsonOrThrow<never>(res);
   }
   return res.blob();
+}
+
+
+// ---------------------------------------------------------------------------
+// Persistencia local de la clave de OpenAI (spec edicion-avanzada-shorts, §9)
+// ---------------------------------------------------------------------------
+
+/**
+ * Clave de `localStorage` bajo la que se persiste la API key de OpenAI.
+ *
+ * IMPLICACIÓN DE SEGURIDAD (design §9, S5): persistir la clave en `localStorage`
+ * la deja legible por cualquier script del mismo origen (expuesta a XSS). Es una
+ * decisión que el usuario asume explícitamente; `OpenAIKeyInput` muestra el
+ * aviso visible y ofrece "Olvidar clave" ({@link olvidarApiKeyLocal}). La clave
+ * NUNCA se registra en logs ni se persiste en el backend (solo vive en el mapa
+ * transitorio en memoria mientras dura el Job).
+ */
+const CLAVE_LS_OPENAI = 'openai_api_key';
+
+/**
+ * Guarda la clave de OpenAI en `localStorage`. Es robusto ante entornos sin
+ * `localStorage` (p. ej. SSR o modo privado): cualquier error se ignora en
+ * silencio para no romper la UI.
+ */
+export function guardarApiKeyLocal(k: string): void {
+  try {
+    localStorage.setItem(CLAVE_LS_OPENAI, k);
+  } catch {
+    // Entorno sin `localStorage` disponible: se ignora (no bloquea la UI).
+  }
+}
+
+/**
+ * Lee la clave de OpenAI de `localStorage`. Devuelve cadena vacía si no hay
+ * clave guardada o si `localStorage` no está disponible.
+ */
+export function leerApiKeyLocal(): string {
+  try {
+    return localStorage.getItem(CLAVE_LS_OPENAI) ?? '';
+  } catch {
+    // Entorno sin `localStorage`: se trata como "sin clave guardada".
+    return '';
+  }
+}
+
+/**
+ * Borra la clave de OpenAI de `localStorage` (botón "Olvidar clave", design §9).
+ * Robusto ante entornos sin `localStorage`.
+ */
+export function olvidarApiKeyLocal(): void {
+  try {
+    localStorage.removeItem(CLAVE_LS_OPENAI);
+  } catch {
+    // Entorno sin `localStorage`: nada que borrar.
+  }
 }

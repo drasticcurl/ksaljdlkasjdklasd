@@ -41,8 +41,17 @@
  * los empates y con valores negativos (tiempos invertidos).
  */
 
-import type { Grupo, Palabra } from '@/components/remotion/types';
-import type { GrupoSubtituloConPalabras } from './types';
+import type {
+  Grupo,
+  Palabra,
+  TextoExtraProps,
+  EstiloTextoExtra as EstiloTextoExtraProps,
+} from '@/components/remotion/types';
+import type {
+  GrupoSubtituloConPalabras,
+  TextoExtra,
+  EstiloTextoExtra,
+} from './types';
 
 /**
  * Redondea `valor` al entero más cercano usando *round-half-to-even* (banker's
@@ -199,4 +208,97 @@ function mayorFinSegundos(grupos: readonly Grupo[]): number {
     }
   }
   return maxEndMs / 1000;
+}
+
+
+// ---------------------------------------------------------------------------
+// Mapeo de textos extra tipo "hook" (backend -> composición Remotion)
+// ---------------------------------------------------------------------------
+
+/**
+ * Redondea un intervalo ya expresado en milisegundos a `[inicioMs, finMs]`
+ * enteros, garantizando el orden `finMs >= inicioMs`.
+ *
+ * Réplica exacta del criterio de `_ms_desde_segundos` del backend
+ * (`backend/app/engine/remotion.py`) pero aplicado a valores que YA vienen en
+ * milisegundos (el `TextoExtra` del frontend guarda `inicioMs`/`finMs`, no
+ * segundos): redondea ambos extremos con {@link redondearMitadAPar} (el mismo
+ * *round-half-to-even* de Python que usa el mapeo de grupos) y, si el redondeo
+ * invirtiera el intervalo (`finMs < inicioMs`), fija `finMs = inicioMs`.
+ *
+ * Aplicar el mismo redondeo que el mapeo de grupos mantiene la coherencia con
+ * el backend `mapear_texto_extra_a_props` incluso cuando los milisegundos de
+ * entrada son fraccionarios (empates en `N + 0.5` ms), tal como exige la
+ * Propiedad de coherencia P7 del diseño.
+ */
+function redondearIntervaloMs(inicioMs: number, finMs: number): [number, number] {
+  const inicioRedondeado = redondearMitadAPar(inicioMs);
+  let finRedondeado = redondearMitadAPar(finMs);
+  if (finRedondeado < inicioRedondeado) {
+    finRedondeado = inicioRedondeado;
+  }
+  return [inicioRedondeado, finRedondeado];
+}
+
+/**
+ * Proyecta el estilo de un texto extra del backend al estilo de la composición
+ * Remotion, campo a campo.
+ *
+ * Ambos tipos (`EstiloTextoExtra` de `lib/types.ts` y el `EstiloTextoExtra` del
+ * contrato de la composición) usan camelCase y comparten exactamente los mismos
+ * campos, por lo que el mapeo es una copia explícita 1:1 (sin renombrar ni
+ * transformar valores). Es una función **pura**: no muta la entrada.
+ */
+function estiloTextoExtraARemotion(estilo: EstiloTextoExtra): EstiloTextoExtraProps {
+  return {
+    fuente: estilo.fuente,
+    tamano: estilo.tamano,
+    color: estilo.color,
+    colorBorde: estilo.colorBorde,
+    grosorBorde: estilo.grosorBorde,
+    negrita: estilo.negrita,
+    posVerticalPct: estilo.posVerticalPct,
+    posHorizontalPct: estilo.posHorizontalPct,
+  };
+}
+
+/**
+ * Mapea un `TextoExtra` del backend al contrato `TextoExtraProps` de la
+ * composición Remotion.
+ *
+ * El `TextoExtra` del frontend YA viene en milisegundos (`inicioMs`/`finMs`) y
+ * con el estilo en camelCase, así que este mapeo:
+ *   - redondea `inicioMs`/`finMs` con {@link redondearIntervaloMs} (mismo
+ *     criterio de redondeo *round-half-to-even* que el mapeo de grupos), de modo
+ *     que el resultado coincida EXACTAMENTE con lo que emite el backend
+ *     `mapear_texto_extra_a_props` (Propiedad de coherencia P7);
+ *   - proyecta el estilo campo a campo con {@link estiloTextoExtraARemotion}.
+ *
+ * Función **pura**: no muta la entrada.
+ */
+function textoExtraBackendARemotion(t: TextoExtra): TextoExtraProps {
+  const [inicioMs, finMs] = redondearIntervaloMs(t.inicioMs, t.finMs);
+  return {
+    texto: t.texto,
+    inicioMs,
+    finMs,
+    estilo: estiloTextoExtraARemotion(t.estilo),
+  };
+}
+
+/**
+ * Mapea una lista de `TextoExtra` del backend a la lista de `TextoExtraProps`
+ * de la composición Remotion.
+ *
+ * Réplica de la emisión de `props["textosExtra"]` del backend (§6.1/§6.2 del
+ * diseño): produce los mismos `inicioMs`/`finMs` (usando el redondeo banker's
+ * de `redondearMitadAPar`) y el mismo estilo camelCase que
+ * `mapear_texto_extra_a_props`, garantizando la coherencia backend↔frontend
+ * (Propiedad P7). Función **pura**: devuelve una nueva lista sin mutar la
+ * entrada.
+ */
+export function textosExtraBackendARemotion(
+  textos: readonly TextoExtra[],
+): TextoExtraProps[] {
+  return textos.map(textoExtraBackendARemotion);
 }

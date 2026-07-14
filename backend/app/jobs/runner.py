@@ -24,11 +24,13 @@ import logging
 from typing import Any, Callable, Optional
 
 from app.engine.pipeline import (
+    MOTOR_RENDER_EDICION_FINAL,
     EventoProgreso,
     ReporteProgreso,
     ResultadoPipeline,
     ejecutar_pipeline,
     preparar_grupos_y_pausar,
+    reanudar_desde_silencios,
     reanudar_pipeline,
 )
 from app.models.settings import DEFAULT_MOTOR_RENDER, MotorRender
@@ -158,6 +160,28 @@ class JobRunner:
                 runner=self.runner,
                 **self._inyecciones,
             )
+            if resultado.pendiente_edicion_silencios:
+                # Pausa por edición manual de silencios (spec edicion-avanzada-shorts,
+                # Req 1.2, 1.3, 16.2): tras UNIR, el pipeline detectó los tramos de
+                # silencio sobre el vídeo **unido** (sin recortar) y se detuvo a la
+                # espera de que el usuario los edite en el timeline y confirme con
+                # ``POST /silencios/{id}``. Se persiste el estado
+                # ESPERANDO_EDICION_SILENCIOS con los tres artefactos que aporta el
+                # ``ResultadoPipeline`` (``unido``, ``silencios``, ``duracion_unido_s``)
+                # y NO se limpia el workdir (los intermedios se necesitan para
+                # aplicar los tramos y continuar al reanudar, Req 16.2, 16.3).
+                self.manager.marcar_esperando_edicion_silencios(
+                    job_id,
+                    str(resultado.unido) if resultado.unido is not None else "",
+                    resultado.silencios if resultado.silencios is not None else [],
+                    (
+                        float(resultado.duracion_unido_s)
+                        if resultado.duracion_unido_s is not None
+                        else 0.0
+                    ),
+                )
+                limpiar = False
+                return resultado
             if resultado.pendiente_revision:
                 # Pausa por revisión manual: guardar grupos + video cortado y
                 # dejar el Job a la espera SIN limpiar los temporales.
@@ -169,13 +193,19 @@ class JobRunner:
                 limpiar = False
                 return resultado
             if resultado.pendiente_eleccion_render:
-                # Pausa por elección de motor de render (spec subtitulos-ia-remotion,
-                # Req 6.1): el pipeline preparó los ``grupos_finales`` y se detuvo
-                # SIN renderizar. Se persiste el estado ESPERANDO_ELECCION_RENDER
-                # (con el video ``cortado`` y los grupos finales) y NO se limpia el
-                # workdir (los intermedios se necesitan al reanudar con el motor
-                # que elija el usuario vía POST /render/{id}).
-                self.manager.marcar_esperando_eleccion_render(
+                # Pausa por edición final (spec edicion-avanzada-shorts, Req 8.1):
+                # el pipeline preparó los ``grupos_finales`` y se detuvo SIN
+                # renderizar, a la espera de la previsualización + textos extra. Se
+                # persiste el estado ESPERANDO_EDICION_FINAL (con el video
+                # ``cortado`` y los grupos finales) y NO se limpia el workdir (los
+                # intermedios se necesitan al reanudar el render final —SIEMPRE con
+                # Remotion— vía POST /render/{id}, Req 16.2, 16.3).
+                #
+                # NOTA (renombrado): el pipeline sigue señalando esta pausa con el
+                # flag ``pendiente_eleccion_render``; ese flag se mapea ahora al
+                # marcador ``marcar_esperando_edicion_final`` (antes
+                # ``marcar_esperando_eleccion_render``).
+                self.manager.marcar_esperando_edicion_final(
                     job_id,
                     str(resultado.cortado) if resultado.cortado is not None else "",
                     resultado.grupos,
@@ -216,7 +246,7 @@ class JobRunner:
         return resultado
 
     def reanudar_job(self, job_id: str, grupos: Any) -> ResultadoPipeline:
-        """Aplica los subtítulos editados y **pausa** para elegir el motor.
+        """Aplica los subtítulos editados y **pausa** en la edición final.
 
         Reanuda un Job pausado en ``ESPERANDO_REVISION`` (revisión manual de
         subtítulos): toma los ``grupos`` de subtítulo ya editados por el usuario y
@@ -224,9 +254,10 @@ class JobRunner:
         (agrupación no aplica —los grupos vienen dados— + corrección IA opcional
         con la ``api_key`` transitoria). En lugar de renderizar directamente
         (comportamiento previo), el Job vuelve a pausarse en
-        ``ESPERANDO_ELECCION_RENDER`` a la espera de que el usuario elija el motor
-        de render (spec subtitulos-ia-remotion, Req 6.1): el render efectivo lo
-        dispara ``POST /render/{id}`` (ver :meth:`reanudar_render_job`).
+        ``ESPERANDO_EDICION_FINAL`` a la espera de que el usuario ajuste la
+        previsualización y añada los textos extra (spec edicion-avanzada-shorts,
+        Req 8.1): el render efectivo —SIEMPRE con Remotion— lo dispara
+        ``POST /render/{id}`` (ver :meth:`reanudar_render_job`).
 
         **NO** limpia el workdir: los intermedios (video ``cortado``) se necesitan
         para el render de la reanudación posterior.
@@ -236,8 +267,9 @@ class JobRunner:
             grupos: Grupos de subtítulo editados a aplicar.
 
         Returns:
-            El :class:`ResultadoPipeline` señalizando la pausa de elección de
-            motor (``pendiente_eleccion_render=True``).
+            El :class:`ResultadoPipeline` señalizando la pausa de edición final
+            (``pendiente_eleccion_render=True``, persistida como
+            ``ESPERANDO_EDICION_FINAL``).
 
         Raises:
             KeyError: Si el Job no existe en el Gestor.
@@ -265,9 +297,12 @@ class JobRunner:
                 api_key=api_key,
                 reporter=reporter,
             )
-            # Persistir la pausa de elección de motor con los grupos ya
-            # definitivos. NO se limpia el workdir (se necesita para el render).
-            self.manager.marcar_esperando_eleccion_render(
+            # Persistir la pausa de edición final con los grupos ya definitivos.
+            # NO se limpia el workdir (se necesita para el render). El flag del
+            # pipeline (``pendiente_eleccion_render``) se mapea al marcador
+            # ``marcar_esperando_edicion_final`` (renombrado desde
+            # ``marcar_esperando_eleccion_render``).
+            self.manager.marcar_esperando_edicion_final(
                 job_id,
                 str(resultado.cortado) if resultado.cortado is not None else cortado,
                 resultado.grupos,
@@ -286,25 +321,158 @@ class JobRunner:
 
         return resultado
 
-    def reanudar_render_job(
-        self, job_id: str, motor: MotorRender = DEFAULT_MOTOR_RENDER
+    def reanudar_silencios_job(
+        self, job_id: str, tramos_editados: Any
     ) -> ResultadoPipeline:
-        """Reanuda la **fase 2** (render) con el motor elegido por el usuario.
+        """Aplica los tramos de silencio editados y continúa hasta la siguiente pausa.
 
-        Reanuda un Job pausado en ``ESPERANDO_ELECCION_RENDER`` ejecutando
-        :func:`reanudar_pipeline` sobre el video ``cortado`` y los
-        ``grupos_finales`` guardados durante la pausa, con **exactamente** el
-        ``motor`` elegido (``"ass"`` | ``"remotion"``) y **sin fallback** entre
-        motores (spec subtitulos-ia-remotion, Req 6.4, 7.1-7.4): renderiza los
-        subtítulos, mezcla música (si la hay) y conserva el ``Video_Final``. El
-        progreso se reporta de forma monótona en el rango 70–90 % del paso
-        SUBTITULOS (Req 6.4). Al terminar —éxito o error— limpia el workdir
-        (Req 13.3): si el motor elegido falla, el Job pasa a ``FALLIDO`` con error
-        accionable, sin reintentar el otro motor.
+        Reanuda un Job pausado en ``ESPERANDO_EDICION_SILENCIOS`` (edición manual
+        de silencios en el timeline, spec edicion-avanzada-shorts, Req 5.1, 5.7):
+        toma del :class:`~app.models.job.JobState` los artefactos persistidos en
+        la pausa —``unido_path`` (vídeo unido pre-corte) y ``duracion_unido_s``—
+        y los ``tramos_editados`` que el usuario confirmó con
+        ``POST /silencios/{id}`` (tarea 5.1), y delega en
+        :func:`~app.engine.pipeline.reanudar_desde_silencios`, que reconstruye el
+        vídeo **cortado** aplicando el complemento de los tramos a borrar y
+        continúa el flujo secuencial TRANSCRIBIR → SUBTÍTULOS → (revisión) →
+        edición final, **sin regenerar** los artefactos ya completados (UNIR y la
+        detección de silencios, Req 16.1, 16.3).
+
+        El resultado señaliza la **siguiente** pausa (revisión manual de
+        subtítulos o edición final), que se persiste igual que en
+        :meth:`ejecutar_job`, o bien un fallo. En cualquier pausa NO se limpia el
+        workdir (los intermedios se necesitan para reanudar, Req 16.2); solo se
+        limpia ante un fallo.
+
+        **Interfaz para el endpoint POST /silencios/{id} (tarea 5.1):** el
+        endpoint invocará :meth:`lanzar_reanudacion_silencios` (o esta misma
+        función en modo síncrono) pasando ``job_id`` y la lista de tramos a
+        BORRAR ``[(inicio_s, fin_s), ...]`` ya validados. El runner obtiene el
+        resto (``unido_path``, ``duracion_unido_s``) del ``JobState``; el endpoint
+        NO necesita reenviarlos.
 
         Args:
-            job_id: Identificador del Job pausado en ``ESPERANDO_ELECCION_RENDER``.
-            motor: Motor de render elegido (``"ass"`` | ``"remotion"``).
+            job_id: Identificador del Job pausado en ``ESPERANDO_EDICION_SILENCIOS``.
+            tramos_editados: Tramos a BORRAR ``(inicio_s, fin_s)`` confirmados por
+                el usuario (posiblemente vacíos → no se borra nada, Req 1.4/5.5).
+
+        Returns:
+            El :class:`ResultadoPipeline` señalizando la siguiente pausa o un fallo.
+
+        Raises:
+            KeyError: Si el Job no existe en el Gestor.
+        """
+        job_state = self.manager.obtener(job_id)
+        if job_state is None:
+            raise KeyError(f"Job inexistente: {job_id!r}")
+
+        # Volver a EN_EJECUCION (desde ESPERANDO_EDICION_SILENCIOS) mientras se
+        # aplica el corte y se continúa el pipeline.
+        self.manager.marcar_en_ejecucion(job_id)
+        job_wd = JobWorkdir(job_id)
+        reporter = self._crear_reporter(job_id)
+        # Clave transitoria de OpenAI para el sub-paso de IA posterior (Req 2.4).
+        # Nunca se registra en logs.
+        api_key = self.manager.obtener_api_key(job_id)
+        # Artefactos persistidos durante la pausa de silencios (tarea 4.3):
+        unido = job_state.unido_path or ""
+        duracion = (
+            float(job_state.duracion_unido_s)
+            if job_state.duracion_unido_s is not None
+            else 0.0
+        )
+
+        # Por defecto NO se limpia el workdir: la reanudación termina en otra
+        # pausa (revisión/edición final) cuyos intermedios se necesitan (Req 16.2).
+        limpiar = False
+        resultado: ResultadoPipeline
+        try:
+            resultado = reanudar_desde_silencios(
+                job_wd,
+                unido,
+                list(tramos_editados) if tramos_editados is not None else [],
+                duracion,
+                job_state.ajustes,
+                api_key=api_key,
+                reporter=reporter,
+                runner=self.runner,
+                **self._inyecciones,
+            )
+            if resultado.pendiente_revision:
+                # Pausa por revisión manual de subtítulos: persistir grupos +
+                # vídeo cortado SIN limpiar el workdir.
+                self.manager.marcar_esperando_revision(
+                    job_id,
+                    str(resultado.cortado) if resultado.cortado is not None else "",
+                    resultado.grupos,
+                )
+                return resultado
+            if resultado.pendiente_eleccion_render:
+                # Pausa por edición final: persistir grupos finales + vídeo
+                # cortado SIN limpiar el workdir. El flag del pipeline
+                # ``pendiente_eleccion_render`` se mapea a
+                # ``marcar_esperando_edicion_final`` (Req 8.1, 16.2).
+                self.manager.marcar_esperando_edicion_final(
+                    job_id,
+                    str(resultado.cortado) if resultado.cortado is not None else "",
+                    resultado.grupos,
+                )
+                return resultado
+            # No debería ocurrir en el flujo normal (la reanudación siempre acaba
+            # en una pausa), pero por robustez se contempla un fallo del corte: se
+            # refuerza el estado FALLIDO y se limpia el workdir.
+            self.manager.marcar_fallido(
+                job_id,
+                resultado.paso_fallido,
+                resultado.motivo or "fallo del pipeline",
+            )
+            limpiar = True
+        except Exception as exc:  # noqa: BLE001 - fallo inesperado => Job fallido
+            logger.exception(
+                "Fallo inesperado al reanudar los silencios del Job %s", job_id
+            )
+            self.manager.marcar_fallido(job_id, "PIPELINE", str(exc))
+            resultado = ResultadoPipeline(exito=False, motivo=str(exc))
+            limpiar = True
+        finally:
+            # Solo se limpia el workdir ante fallo (en las pausas se conserva para
+            # poder reanudar, Req 16.2, 16.3).
+            if limpiar:
+                try:
+                    job_wd.cleanup()
+                except Exception:  # noqa: BLE001 - la limpieza no debe propagar
+                    logger.exception(
+                        "Fallo al limpiar el workdir del Job %s", job_id
+                    )
+
+        return resultado
+
+    def reanudar_render_job(
+        self, job_id: str, motor: MotorRender = MOTOR_RENDER_EDICION_FINAL
+    ) -> ResultadoPipeline:
+        """Reanuda la **fase 2** (render) tras la edición final (Req 7.1, 10.1).
+
+        Reanuda un Job pausado en ``ESPERANDO_EDICION_FINAL`` ejecutando
+        :func:`reanudar_pipeline` sobre el video ``cortado`` y los
+        ``grupos_finales`` guardados durante la pausa. En el flujo de edición
+        avanzada de shorts el render es **SIEMPRE con Remotion** (spec
+        edicion-avanzada-shorts, Req 7.1, 11.2, 11.6), por lo que ``motor`` es
+        ``"remotion"`` por defecto (:data:`MOTOR_RENDER_EDICION_FINAL`); el
+        parámetro se conserva por compatibilidad con el endpoint. Se propagan los
+        ``textos_extra`` persistidos en el ``JobState`` (por
+        :meth:`~app.jobs.manager.JobManager.guardar_textos_extra` desde
+        ``POST /render/{id}``, Req 10.1) al render Remotion, que
+        :func:`reanudar_pipeline` reenvía al constructor de props para emitir los
+        overlays ``textosExtra`` (Req 10.2). Renderiza los subtítulos, mezcla
+        música (si la hay) y conserva el ``Video_Final``. El progreso se reporta
+        de forma monótona en el rango 70–90 % del paso SUBTITULOS. Al terminar
+        —éxito o error— limpia el workdir: si el render falla, el Job pasa a
+        ``FALLIDO`` con error accionable (sin fallback a otro motor, Req 7.4).
+
+        Args:
+            job_id: Identificador del Job pausado en ``ESPERANDO_EDICION_FINAL``.
+            motor: Motor de render (``"remotion"`` por defecto; ``"ass"`` se
+                mantiene por compatibilidad pero no se usa en este flujo).
 
         Returns:
             El :class:`ResultadoPipeline` de la fase 2 (render).
@@ -316,13 +484,17 @@ class JobRunner:
         if job_state is None:
             raise KeyError(f"Job inexistente: {job_id!r}")
 
-        # Volver a EN_EJECUCION (desde ESPERANDO_ELECCION_RENDER) para el render.
+        # Volver a EN_EJECUCION (desde ESPERANDO_EDICION_FINAL) para el render.
         self.manager.marcar_en_ejecucion(job_id)
         job_wd = JobWorkdir(job_id)
         reporter = self._crear_reporter(job_id)
         musica_wav = self.resolver_musica(job_state.musica_id)
         cortado = job_state.cortado_path or ""
         grupos = job_state.grupos_finales or []
+        # Textos extra tipo "hook" persistidos en la edición final (Req 10.1): se
+        # propagan al render Remotion para emitir los overlays ``textosExtra``
+        # (Req 10.2). Lista vacía si el usuario no añadió ninguno.
+        textos_extra = job_state.textos_extra or []
 
         resultado: ResultadoPipeline
         try:
@@ -332,6 +504,7 @@ class JobRunner:
                 job_state.ajustes,
                 palabras=[],
                 grupos=grupos,
+                textos_extra=textos_extra,
                 motor=motor,
                 musica_wav=musica_wav,
                 reporter=reporter,
@@ -392,6 +565,30 @@ class JobRunner:
         """
         loop = asyncio.get_event_loop()
         return loop.run_in_executor(None, self.reanudar_job, job_id, grupos)
+
+    async def lanzar_reanudacion_silencios(
+        self, job_id: str, tramos_editados: Any
+    ) -> asyncio.Future:
+        """Lanza la reanudación desde silencios en background sin bloquear (Req 5.1, 5.7).
+
+        Programa :meth:`reanudar_silencios_job` en el executor por defecto del
+        bucle de eventos y devuelve de inmediato el ``Future`` asociado, de modo
+        que el endpoint ``POST /silencios/{id}`` (tarea 5.1) pueda responder
+        ``202`` rápidamente mientras el corte de silencios y el resto del flujo
+        (TRANSCRIBIR → SUBTÍTULOS → ...) se ejecutan en segundo plano.
+
+        Esta es la función que invocará el endpoint 5.1 pasando ``job_id`` y la
+        lista de tramos a BORRAR ``[(inicio_s, fin_s), ...]`` ya validados; el
+        runner obtiene el resto de artefactos (``unido_path``,
+        ``duracion_unido_s``) del ``JobState``.
+
+        Returns:
+            El ``Future`` de la ejecución en background (no se espera aquí).
+        """
+        loop = asyncio.get_event_loop()
+        return loop.run_in_executor(
+            None, self.reanudar_silencios_job, job_id, tramos_editados
+        )
 
     async def lanzar_reanudacion_render(
         self, job_id: str, motor: MotorRender = DEFAULT_MOTOR_RENDER

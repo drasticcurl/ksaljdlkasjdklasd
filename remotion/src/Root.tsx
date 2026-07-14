@@ -35,6 +35,10 @@ const defaultProps: ShortVideoProps = {
   },
   combineTokensWithinMs: 1200,
   grupos: [],
+  // Retrocompatibilidad del Studio: sin textos extra por defecto (lista vacia).
+  // Un props.json real sobreescribe este valor con los overlays enviados por
+  // el backend.
+  textosExtra: [],
 };
 
 // Deriva fps/durationInFrames/width/height desde los inputProps (Req 9.1).

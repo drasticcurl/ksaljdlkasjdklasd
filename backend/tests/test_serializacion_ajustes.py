@@ -97,6 +97,9 @@ def ajustes_validos_arbitrarios(draw: st.DrawFn) -> Ajustes:
     ajustes = Ajustes(musica=AjustesMusica() if con_musica else None)
 
     for ruta, (minimo, maximo) in RANGOS_MOTOR.items():
+        # Los rangos de estilo de textos extra no son campos de ``Ajustes``.
+        if ruta.startswith("texto_extra."):
+            continue
         if ruta.startswith("musica.") and not con_musica:
             continue
         _set_por_ruta(ajustes, ruta, draw(_valor_valido(ruta, minimo, maximo)))

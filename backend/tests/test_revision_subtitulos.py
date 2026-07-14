@@ -74,7 +74,10 @@ def _hacer_job(tmp_path: Path, monkeypatch, nombre: str) -> JobWorkdir:
 def test_pipeline_se_pausa_para_revision(tmp_path: Path, monkeypatch) -> None:
     job = _hacer_job(tmp_path, monkeypatch, "job-rev")
     spy = _SubtitulosSpy()
+    # Corte de silencios desactivado (Req 1.5): estos tests ejercitan la revisión
+    # de subtítulos, no la pausa de edición de silencios.
     ajustes = Ajustes(subtitulos=AjustesSubtitulos(revisar=True))
+    ajustes.silencios.activado = False
 
     resultado = ejecutar_pipeline(
         job,
@@ -110,6 +113,10 @@ def test_reanudar_aplica_grupos_editados(tmp_path: Path, monkeypatch) -> None:
         ajustes,
         palabras=[],
         grupos=editados,
+        # Motor "ass" explícito: el valor por defecto del render es ahora
+        # "remotion" (spec edicion-avanzada-shorts); este test verifica que los
+        # grupos editados llegan al quemado ASS.
+        motor="ass",
         musica_wav=None,
         fn_subtitulos=spy,
         fn_preservar=_fake_preservar,
@@ -124,6 +131,7 @@ def test_sin_revision_corre_completo(tmp_path: Path, monkeypatch) -> None:
     job = _hacer_job(tmp_path, monkeypatch, "job-norev")
     spy = _SubtitulosSpy()
     ajustes = Ajustes()  # revisar por defecto False
+    ajustes.silencios.activado = False  # sin pausa de edición de silencios (Req 1.5)
 
     resultado = ejecutar_pipeline(
         job,
@@ -138,8 +146,8 @@ def test_sin_revision_corre_completo(tmp_path: Path, monkeypatch) -> None:
     )
 
     # Sin revisión manual, el pipeline ya NO renderiza automáticamente: prepara
-    # los grupos finales y se pausa para que el usuario elija el motor de render
-    # (spec subtitulos-ia-remotion, tarea 8.2, Req 6.1).
+    # los grupos finales y se pausa en la edición final (spec
+    # edicion-avanzada-shorts; antes "elección de motor").
     assert resultado.pendiente_revision is False
     assert resultado.pendiente_eleccion_render is True
     assert resultado.exito is False

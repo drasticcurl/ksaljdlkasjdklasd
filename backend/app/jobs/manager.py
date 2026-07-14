@@ -9,14 +9,18 @@ Mantiene el registro de Jobs (``job_id -> JobState``) protegido por un lock, con
   también monótono no decreciente: cualquier actualización que intentara
   retroceder el porcentaje o el índice se **ignora** para ese campo (se conserva
   el valor máximo alcanzado). Esto garantiza la Propiedad 22 (invariantes de
-  progreso).
+  progreso) y los requisitos de progreso de la feature edicion-avanzada-shorts:
+  el porcentaje se mantiene acotado en ``[0, 100]`` y no decrece nunca (Req 16.4)
+  y se fija en ``100`` al finalizar con éxito en :meth:`JobManager.marcar_completado`
+  (Req 16.5).
 
 Concurrencia: el registro se protege con un :class:`threading.RLock`, correcto
 tanto para la capa API asíncrona como para el ejecutor en background (que corre
 el pipeline en un hilo del executor). Todas las operaciones que leen o mutan el
 estado adquieren el lock.
 
-Referencias de requisitos: 10.3, 10.5.
+Referencias de requisitos: 10.3, 10.5, 16.4, 16.5 (y feature edicion-avanzada-shorts
+Req 1.3, 8.1, 11.2 para las pausas de edición de silencios y edición final).
 """
 
 from __future__ import annotations
@@ -163,26 +167,74 @@ class JobManager:
             job.actualizado_en = _ahora()
             return job
 
-    def marcar_esperando_eleccion_render(
+    def marcar_esperando_edicion_silencios(
+        self,
+        job_id: str,
+        unido_path: str,
+        silencios: object,
+        duracion: float,
+    ) -> JobState:
+        """Pausa el Job en ``ESPERANDO_EDICION_SILENCIOS`` (spec edicion-avanzada-shorts, Req 1.2, 1.3).
+
+        Se invoca cuando el pipeline, tras UNIR los clips, ha detectado los
+        tramos de silencio sobre el vídeo **unido** (sin recortar) y queda a la
+        espera de que el usuario edite manualmente dichos tramos en el timeline y
+        confirme con ``POST /silencios/{id}``. Es una pausa PREVIA a la
+        transcripción.
+
+        Persiste en el :class:`JobState` los tres artefactos necesarios para la
+        edición y la posterior reanudación (Req 1.3):
+
+        * ``unido_path``: ruta del vídeo unido (pre-corte) que alimenta el
+          timeline y sobre el que se aplicarán los tramos a borrar al reanudar.
+        * ``silencios_detectados``: lista de :class:`TramoSilencio` detectados (a
+          borrar), ya ordenados y sin solapes. Se admite una lista vacía cuando
+          no se ha detectado ningún silencio (Req 1.4).
+        * ``duracion_unido_s``: duración total del vídeo unido en segundos,
+          necesaria para validar/normalizar los tramos y calcular el complemento.
+
+        Análogo a :meth:`marcar_esperando_revision`: el estado es NO terminal,
+        por lo que la clave de API transitoria NO se descarta aquí (solo se
+        elimina al alcanzar un estado terminal, Req 2.5). El porcentaje/índice de
+        paso alcanzados se conservan respetando la monotonicidad (Req 10.5, 16.4).
+        """
+        with self._lock:
+            job = self._exigir(job_id)
+            job.unido_path = unido_path
+            job.silencios_detectados = list(silencios) if silencios is not None else []
+            job.duracion_unido_s = duracion
+            job.progreso.estado = JobStatus.ESPERANDO_EDICION_SILENCIOS
+            job.progreso.mensaje = "Esperando edición manual de silencios"
+            job.actualizado_en = _ahora()
+            return job
+
+    def marcar_esperando_edicion_final(
         self,
         job_id: str,
         cortado_path: str,
         grupos_finales: object,
     ) -> JobState:
-        """Pausa el Job en ``ESPERANDO_ELECCION_RENDER`` (spec subtitulos-ia-remotion, Req 6.1).
+        """Pausa el Job en ``ESPERANDO_EDICION_FINAL`` (spec edicion-avanzada-shorts, Req 8.1).
 
         Se invoca cuando el pipeline ha preparado los ``grupos_finales`` (grupos
         ya agrupados y corregidos con IA si estaba activada) y queda a la espera
-        de que el usuario elija el motor de render mediante los dos botones del
-        frontend. Almacena la ruta del video ``cortado`` (sobre el que se
-        renderizarán los subtítulos al reanudar con el motor elegido) y los
-        ``grupos_finales`` en su campo DEDICADO del :class:`JobState`.
+        de que el usuario realice la edición final (previsualización en vivo +
+        textos extra) y confirme con ``POST /render/{id}``. El render es SIEMPRE
+        con Remotion (ya no hay elección de motor). Almacena la ruta del video
+        ``cortado`` (sobre el que se renderizarán los subtítulos al reanudar) y
+        los ``grupos_finales`` en su campo DEDICADO del :class:`JobState`.
 
-        Análogo a :meth:`marcar_esperando_revision`, pero para la pausa de
-        elección de motor: el estado es NO terminal, por lo que la clave de API
-        transitoria NO se descarta aquí (solo se elimina al alcanzar un estado
-        terminal, Req 2.5). El porcentaje/índice de paso alcanzados se conservan
-        respetando la monotonicidad (Req 6.4, 10.5).
+        NOTA DE COMPATIBILIDAD (renombrado): este marcador sustituye al antiguo
+        ``marcar_esperando_eleccion_render`` y transiciona al estado
+        ``ESPERANDO_EDICION_FINAL`` (antes ``ESPERANDO_ELECCION_RENDER``). Ocupa
+        EXACTAMENTE el mismo punto lógico de pausa del pipeline; solo cambia el
+        nombre/semántica (antes "elegir motor"; ahora "preview + textos extra +
+        render Remotion").
+
+        Análogo a :meth:`marcar_esperando_revision`: el estado es NO terminal,
+        por lo que la clave de API transitoria NO se descarta aquí (solo se
+        elimina al alcanzar un estado terminal, Req 2.5). El porcentaje/índice de
+        paso alcanzados se conservan respetando la monotonicidad (Req 10.5, 16.4).
         """
         with self._lock:
             job = self._exigir(job_id)
@@ -190,8 +242,29 @@ class JobManager:
             job.grupos_finales = (
                 list(grupos_finales) if grupos_finales is not None else []
             )
-            job.progreso.estado = JobStatus.ESPERANDO_ELECCION_RENDER
-            job.progreso.mensaje = "Esperando elección del motor de render"
+            job.progreso.estado = JobStatus.ESPERANDO_EDICION_FINAL
+            job.progreso.mensaje = "Esperando edición final (preview + textos extra)"
+            job.actualizado_en = _ahora()
+            return job
+
+    def guardar_textos_extra(self, job_id: str, textos_extra: object) -> JobState:
+        """Persiste en el :class:`JobState` los ``textos_extra`` de la edición final.
+
+        Se invoca al confirmar la edición final (``POST /render/{id}``, spec
+        edicion-avanzada-shorts, Req 8.1, 10.1) con la lista de overlays de texto
+        plano (máx. 2) que consumirá el constructor de props del render
+        (``construir_props``) para emitir el campo ``textosExtra``.
+
+        La lista se copia de forma defensiva. Si es ``None`` se persiste una
+        lista vacía (equivalente a "sin textos extra"). No altera el estado ni el
+        progreso del Job: es únicamente un setter del artefacto.
+
+        Raises:
+            KeyError: Si ``job_id`` no existe.
+        """
+        with self._lock:
+            job = self._exigir(job_id)
+            job.textos_extra = list(textos_extra) if textos_extra is not None else []
             job.actualizado_en = _ahora()
             return job
 

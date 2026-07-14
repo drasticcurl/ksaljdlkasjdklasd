@@ -26,6 +26,7 @@
 import React from 'react';
 import {AbsoluteFill, Video} from 'remotion';
 import {Captions} from './Captions';
+import {TextosExtraLayer} from './TextosExtraLayer';
 import type {ShortVideoProps} from './types';
 
 /**
@@ -41,6 +42,7 @@ export const ShortVideo: React.FC<ShortVideoProps> = ({
   videoSrc,
   grupos,
   estilo,
+  textosExtra,
 }) => {
   // Solo hay video de fondo si videoSrc es una cadena con contenido.
   const tieneVideo = typeof videoSrc === 'string' && videoSrc.length > 0;
@@ -57,6 +59,16 @@ export const ShortVideo: React.FC<ShortVideoProps> = ({
 
       {/* Capa de subtitulos por encima del fondo. */}
       <Captions grupos={grupos} estilo={estilo} />
+
+      {/*
+        Capa de textos extra tipo "hook" POR ENCIMA de los subtitulos: al
+        montarse DESPUES que <Captions/>, sus overlays de texto plano quedan
+        visibles sobre el video y sobre los subtitulos (§7.4). `textosExtra` es
+        opcional en el contrato => se normaliza a [] para que la capa reciba
+        siempre un array (retrocompatibilidad: props sin este campo => sin
+        overlays).
+      */}
+      <TextosExtraLayer textosExtra={textosExtra ?? []} />
     </AbsoluteFill>
   );
 };

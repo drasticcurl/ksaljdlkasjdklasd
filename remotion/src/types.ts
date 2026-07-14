@@ -1,8 +1,19 @@
 // Contrato de `inputProps` compartido entre el backend Python
 // (backend/app/engine/remotion.py -> construir_props) y la composicion Remotion.
 //
-// IMPORTANTE: la forma de estos tipos debe coincidir EXACTAMENTE con el
-// `props.json` que serializa Python. Cualquier cambio aqui debe reflejarse alla.
+// IMPORTANTE: existen DOS copias de este archivo que DEBEN quedar IDENTICAS
+// (byte a byte) entre si:
+//   - remotion/src/types.ts               (render SSR con Node)
+//   - frontend/components/remotion/types.ts (navegador con @remotion/player)
+// La composicion se renderiza tanto en SSR como en el navegador y ambas
+// necesitan el mismo contrato de props. La UNICA diferencia permitida entre las
+// dos copias de la composicion es el subcomponente `FondoVideo`
+// (`OffthreadVideo` en SSR vs `Video` en el navegador), que NO vive en este
+// archivo; por tanto `types.ts` debe ser identico en ambos lugares.
+//
+// La forma de estos tipos debe coincidir EXACTAMENTE con el `props.json` que
+// serializa Python. Cualquier cambio aqui debe reflejarse en la otra copia y en
+// `backend/app/engine/remotion.py` (construir_props).
 //
 // Nota: ya NO dependemos de `Caption` de @remotion/captions para el render.
 // El backend ahora envia los subtitulos agrupados en `grupos` (frases), cada
@@ -57,6 +68,50 @@ export type Estilo = {
   negrita: boolean;
 };
 
+/**
+ * Estilo visual de un texto extra tipo "hook" (NUEVO, aditivo).
+ *
+ * Es INDEPENDIENTE del estilo de los subtitulos (`Estilo`) aunque comparte los
+ * mismos tipos de campo. Se expresa en camelCase para coincidir con el
+ * `props.json` que serializa el backend (mismo criterio que `Estilo`).
+ */
+export type EstiloTextoExtra = {
+  /** Familia tipografica (p. ej. "Inter", "Arial"). */
+  fuente: string;
+  /** Tamano de fuente en pixeles (rango del motor 12..200). */
+  tamano: number;
+  /** Color de relleno del texto en formato #RRGGBB. */
+  color: string;
+  /** Color del borde/outline del texto en formato #RRGGBB. */
+  colorBorde: string;
+  /** Grosor del borde/outline del texto en pixeles (0 => sin borde). */
+  grosorBorde: number;
+  /** Si el texto se muestra en negrita (700) o normal (400). */
+  negrita: boolean;
+  /** Posicion vertical, en porcentaje 0..100 (0 arriba, 100 abajo). */
+  posVerticalPct: number;
+  /** Posicion horizontal, en porcentaje 0..100 (0 izquierda, 100 derecha). */
+  posHorizontalPct: number;
+};
+
+/**
+ * Overlay de texto plano SIN animacion (NUEVO, aditivo).
+ *
+ * Se muestra unicamente en el intervalo [inicioMs, finMs) sobre el video final,
+ * con su estilo independiente. Los tiempos estan en milisegundos (mismo
+ * criterio de conversion segundos->ms que el resto del contrato).
+ */
+export type TextoExtraProps = {
+  /** Texto plano a mostrar. */
+  texto: string;
+  /** Milisegundo de entrada (in) del texto. */
+  inicioMs: number;
+  /** Milisegundo de salida (out) del texto. */
+  finMs: number;
+  /** Estilo independiente del texto extra. */
+  estilo: EstiloTextoExtra;
+};
+
 /** Propiedades de entrada de la composicion `ShortVideo`. */
 export type ShortVideoProps = {
   /**
@@ -82,4 +137,10 @@ export type ShortVideoProps = {
   combineTokensWithinMs: number;
   /** Subtitulos agrupados en frases (con palabras opcionales con timing). */
   grupos: Grupo[];
+  /**
+   * NUEVO (opcional para retrocompatibilidad): overlays de texto plano tipo
+   * "hook". Un `props.json` sin este campo produce el render previo sin
+   * overlays; el backend siempre lo emite como [] cuando no hay textos extra.
+   */
+  textosExtra?: TextoExtraProps[];
 };

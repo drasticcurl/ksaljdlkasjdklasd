@@ -34,21 +34,34 @@ import ProcessButton from '@/components/ProcessButton';
 import ProgressPanel from '@/components/ProgressPanel';
 import ResultPreview from '@/components/ResultPreview';
 import SubtitleReview from '@/components/SubtitleReview';
+import TimelineSilencios from '@/components/TimelineSilencios';
+import PreviewFinal from '@/components/PreviewFinal';
 import EleccionRender from '@/components/EleccionRender';
-import type { Clip, JobProgress } from '@/lib/types';
+import type { Clip, JobProgress, RenderEleccion } from '@/lib/types';
 import { AJUSTES_POR_DEFECTO, MUSICA_POR_DEFECTO } from '@/lib/defaults';
-import { obtenerConfiguracion } from '@/lib/api';
+import { leerApiKeyLocal, obtenerConfiguracion, obtenerRender } from '@/lib/api';
 
 export default function EditorPage() {
   const [clips, setClips] = useState<Clip[]>([]);
   const [ajustes, setAjustes] = useState(AJUSTES_POR_DEFECTO);
   const [musicaId, setMusicaId] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
-  // Clave de API de OpenAI: transitoria, solo en estado de React (NO se
-  // persiste en localStorage ni en ningún almacenamiento).
+  // Clave de API de OpenAI. Vive en el estado de React (se pasa a
+  // `OpenAIKeyInput` y a `procesar`) y, en esta feature, ADEMÁS se persiste en
+  // `localStorage` para no reintroducirla en cada sesión: `OpenAIKeyInput`
+  // guarda/olvida la clave y esta página la PRECARGA al montar con
+  // `leerApiKeyLocal()` (Req 12.2). Ver aviso de seguridad en `OpenAIKeyInput`.
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [completado, setCompletado] = useState(false);
   const [progresoActual, setProgresoActual] = useState<JobProgress | null>(null);
+  // Datos de la etapa de edición final (`GET /render/{id}`) con los que se
+  // alimenta `PreviewFinal` cuando el Job entra en `esperando_edicion_final`.
+  const [datosEdicionFinal, setDatosEdicionFinal] =
+    useState<RenderEleccion | null>(null);
+  // Error de carga de los datos de edición final (no bloquea el resto de la UI).
+  const [errorEdicionFinal, setErrorEdicionFinal] = useState<string | null>(
+    null,
+  );
 
   // Al abrir la app, cargar los ajustes por defecto guardados (JSON local del
   // backend). Si no hay o falla, se conservan los valores de fábrica.
@@ -65,6 +78,40 @@ export default function EditorPage() {
       cancelado = true;
     };
   }, []);
+
+  // Al montar, PRECARGAR la clave de OpenAI persistida en `localStorage`
+  // (Req 12.2). Se hace en un efecto (no en el inicializador de estado) para
+  // evitar desajustes de hidratación SSR/cliente: en el servidor no hay
+  // `localStorage`. Si no hay clave guardada, `leerApiKeyLocal()` devuelve "".
+  useEffect(() => {
+    const clave = leerApiKeyLocal();
+    if (clave) setOpenaiApiKey(clave);
+  }, []);
+
+  // Cuando el Job entra en `esperando_edicion_final`, cargar los datos del
+  // vídeo cortado + subtítulos + textos extra persistidos (`GET /render/{id}`)
+  // para alimentar `PreviewFinal`. La dependencia es el ESTADO (string), por lo
+  // que el efecto solo se dispara al ENTRAR en la etapa (no en cada tick del
+  // polling). Ante error se muestra el mensaje sin romper el resto de la UI.
+  const estadoActual = progresoActual?.estado;
+  useEffect(() => {
+    if (!jobId || estadoActual !== 'esperando_edicion_final') return;
+    let cancelado = false;
+    setErrorEdicionFinal(null);
+    obtenerRender(jobId)
+      .then((res) => {
+        if (!cancelado) setDatosEdicionFinal(res);
+      })
+      .catch(() => {
+        if (!cancelado)
+          setErrorEdicionFinal(
+            'No se pudieron cargar los datos de la edición final.',
+          );
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [jobId, estadoActual]);
 
   /** Reindexa la lista de clips para que `posicion` sea 1..n. */
   const reindexar = useCallback(
@@ -112,6 +159,21 @@ export default function EditorPage() {
     setJobId(nuevoJobId);
     setCompletado(false);
     setProgresoActual(null);
+    // Limpia cualquier dato de edición final de un Job anterior.
+    setDatosEdicionFinal(null);
+    setErrorEdicionFinal(null);
+  }, []);
+
+  /**
+   * Tras enviar/confirmar en cualquiera de las pausas (silencios, revisión de
+   * subtítulos o edición final), el Job vuelve a `en_ejecucion` y el polling del
+   * `ProgressPanel` (activo mientras exista `jobId`) sigue reflejando el
+   * progreso automáticamente. Aquí solo se limpian los datos transitorios de la
+   * edición final para que se recarguen si se volviera a esa etapa.
+   */
+  const manejarPausaReanudada = useCallback(() => {
+    setDatosEdicionFinal(null);
+    setErrorEdicionFinal(null);
   }, []);
 
   /** Restablece los ajustes a los valores de fábrica (tras borrar el guardado). */
@@ -276,13 +338,71 @@ export default function EditorPage() {
           />
         )}
 
-        {/* Revisión manual de subtítulos: aparece cuando el Job se pausa. */}
-        {jobId && progresoActual?.estado === 'esperando_revision' && (
-          <SubtitleReview jobId={jobId} />
+        {/* Pausa 1 — Edición de silencios (Req 1.5): el Job se detiene tras
+            detectar los silencios sobre el vídeo unido; el usuario ajusta a mano
+            los tramos a borrar y confirma. Al enviar, el pipeline reanuda. */}
+        {jobId && progresoActual?.estado === 'esperando_edicion_silencios' && (
+          <TimelineSilencios jobId={jobId} onEnviado={manejarPausaReanudada} />
         )}
 
-        {/* Elección de motor de render: aparece cuando el Job se pausa a la
-            espera de que el usuario elija Remotion o ffmpeg. */}
+        {/* Pausa 2 — Revisión de subtítulos de SOLO TEXTO (Req 6.1): se editan
+            los textos de cada línea (sin tiempos ni split/merge) y se confirman. */}
+        {jobId && progresoActual?.estado === 'esperando_revision' && (
+          <SubtitleReview jobId={jobId} onEnviado={manejarPausaReanudada} />
+        )}
+
+        {/* Pausa 3 — Edición final (Req 8.1, 11.1): preview del vídeo cortado
+            con subtítulos, gestión de hasta 2 textos extra y confirmación del
+            render, que es SIEMPRE Remotion (sin elección de motor). Se alimenta
+            con los datos de `GET /render/{id}` cargados en el efecto de arriba. */}
+        {jobId && progresoActual?.estado === 'esperando_edicion_final' && (
+          <>
+            {errorEdicionFinal && (
+              <p
+                role="alert"
+                data-testid="edicion-final-error"
+                className="text-sm text-red-400"
+              >
+                {errorEdicionFinal}
+              </p>
+            )}
+
+            {!datosEdicionFinal && !errorEdicionFinal && (
+              <p className="text-sm text-gray-300">
+                Cargando la edición final…
+              </p>
+            )}
+
+            {datosEdicionFinal && datosEdicionFinal.video_url && (
+              <PreviewFinal
+                jobId={jobId}
+                grupos={datosEdicionFinal.grupos}
+                videoUrl={datosEdicionFinal.video_url}
+                width={datosEdicionFinal.ancho}
+                height={datosEdicionFinal.alto}
+                fps={datosEdicionFinal.fps}
+                duracionS={datosEdicionFinal.duracion_s ?? 0}
+                textosExtraIniciales={datosEdicionFinal.textos_extra ?? []}
+                onRenderConfirmado={manejarPausaReanudada}
+              />
+            )}
+
+            {datosEdicionFinal && !datosEdicionFinal.video_url && (
+              <p
+                role="alert"
+                data-testid="edicion-final-sin-video"
+                className="text-sm text-yellow-400"
+              >
+                No hay vídeo cortado disponible para la previsualización final.
+              </p>
+            )}
+          </>
+        )}
+
+        {/* Compatibilidad con el flujo ANTIGUO de elección de motor: en la
+            feature actual el render es siempre Remotion y esta etapa se sustituye
+            por `esperando_edicion_final` (arriba). Se mantiene el manejo antiguo
+            por si un Job heredado reporta todavía `esperando_eleccion_render`. */}
         {jobId && progresoActual?.estado === 'esperando_eleccion_render' && (
           <EleccionRender jobId={jobId} />
         )}

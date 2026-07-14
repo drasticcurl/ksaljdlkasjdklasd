@@ -257,6 +257,11 @@ def test_10_1_pipeline_completo_ejecuta_solo_el_motor_elegido(
     spy_remotion = _SpyMotor("remotion")
 
     ajustes = Ajustes(revision_ia=AjustesRevisionIA(activado=True))
+    # El corte de silencios se desactiva (Req 1.5): este test verifica la elección
+    # de motor a NIVEL DE PIPELINE (que sí sigue soportando ambos motores), no la
+    # pausa de edición de silencios. Así ``ejecutar_pipeline`` continúa a
+    # TRANSCRIBIR y se pausa directamente en la edición final.
+    ajustes.silencios.activado = False
     job = JobWorkdir("job-10-1-pipe")
 
     # --- Fase 1: preparar grupos (IA) y PAUSAR sin renderizar (Req 6.1) ---
@@ -299,15 +304,17 @@ def test_10_1_pipeline_completo_ejecuta_solo_el_motor_elegido(
         assert spy_ass.invocado == 0, "El quemado ASS NO debe invocarse con motor=remotion"
 
 
-@pytest.mark.parametrize("motor", MOTORES)
-def test_10_1_api_reanuda_y_ejecuta_solo_el_motor_elegido(
-    tmp_path: Path, monkeypatch, motor: str
+def test_10_1_api_reanuda_y_ejecuta_siempre_remotion(
+    tmp_path: Path, monkeypatch
 ) -> None:
-    """Vía API: un Job pausado en ``ESPERANDO_ELECCION_RENDER`` se reanuda con
-    ``POST /render/{id}`` ejecutando EXACTAMENTE el motor elegido (Property 8).
+    """Vía API: un Job pausado en ``ESPERANDO_EDICION_FINAL`` se reanuda con
+    ``POST /render/{id}`` renderizando SIEMPRE con Remotion (spec
+    edicion-avanzada-shorts, Req 11.2).
 
-    ``GET /render/{id}`` muestra los grupos corregidos en solo lectura; el motor
-    NO elegido no se invoca. El render corre en background (``JobRunner``).
+    En el nuevo flujo se elimina la elección de motor: ``POST /render`` no acepta
+    ``motor="ass"`` (sólo ``"remotion"`` u omitido). ``GET /render/{id}`` muestra
+    los grupos finales en solo lectura y el render corre en background con
+    Remotion (nunca el quemado ASS).
     """
     _isolar_workdir(monkeypatch, tmp_path)
 
@@ -316,23 +323,23 @@ def test_10_1_api_reanuda_y_ejecuta_solo_el_motor_elegido(
 
     manager = JobManager()
     manager.crear_job("job-10-1-api", ["a"], Ajustes(), workdir="wd")
-    # Pre-situar el Job en la pausa de elección de motor con grupos finales.
-    manager.marcar_esperando_eleccion_render(
+    # Pre-situar el Job en la pausa de edición final con grupos finales.
+    manager.marcar_esperando_edicion_final(
         "job-10-1-api", str(tmp_path / "cortado.mp4"), _grupos_finales()
     )
 
     runner = JobRunner(manager, **_fakes_render(spy_ass, spy_remotion))
     with _cliente(manager, runner) as client:
-        # GET /render: grupos corregidos, editable (esperando elección).
+        # GET /render: grupos finales, editable (esperando edición final).
         resp = client.get("/render/job-10-1-api")
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["estado"] == "esperando_eleccion_render"
+        assert body["estado"] == "esperando_edicion_final"
         assert body["editable"] is True
         assert [g["texto"] for g in body["grupos"]] == ["hola mundo", "segundo grupo"]
 
-        # POST /render con el motor elegido → 202 y reanuda en background.
-        resp = client.post("/render/job-10-1-api", json={"motor": motor})
+        # POST /render (edición final, sin motor) → 202 y reanuda en background.
+        resp = client.post("/render/job-10-1-api", json={})
         assert resp.status_code == 202, resp.text
         assert resp.json()["estado"] == "en_ejecucion"
 
@@ -341,22 +348,49 @@ def test_10_1_api_reanuda_y_ejecuta_solo_el_motor_elegido(
     )
     assert estado == JobStatus.COMPLETADO
 
-    if motor == "ass":
-        assert spy_ass.invocado == 1
-        assert spy_remotion.invocado == 0
-    else:
-        assert spy_remotion.invocado == 1
-        assert spy_ass.invocado == 0
+    # El render es SIEMPRE con Remotion; el quemado ASS nunca se invoca (Req 11.2).
+    assert spy_remotion.invocado == 1
+    assert spy_ass.invocado == 0
 
 
-def test_10_1_api_flujo_completo_pausa_en_eleccion_render(
+def test_10_1_api_render_rechaza_motor_distinto_de_remotion(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """``POST /render`` con ``motor`` distinto de ``"remotion"`` responde
+    ``400 INVALID_REQUEST`` sin renderizar (spec edicion-avanzada-shorts, Req 11.3, 11.5)."""
+    _isolar_workdir(monkeypatch, tmp_path)
+
+    spy_ass = _SpyMotor("ass")
+    spy_remotion = _SpyMotor("remotion")
+
+    manager = JobManager()
+    manager.crear_job("job-10-1-motor", ["a"], Ajustes(), workdir="wd")
+    manager.marcar_esperando_edicion_final(
+        "job-10-1-motor", str(tmp_path / "cortado.mp4"), _grupos_finales()
+    )
+
+    runner = JobRunner(manager, **_fakes_render(spy_ass, spy_remotion))
+    with _cliente(manager, runner) as client:
+        resp = client.post("/render/job-10-1-motor", json={"motor": "ass"})
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["error"]["code"] == "INVALID_REQUEST"
+
+    # El Job no cambió de estado ni se renderizó (Req 11.5).
+    assert manager.obtener("job-10-1-motor").progreso.estado == JobStatus.ESPERANDO_EDICION_FINAL
+    assert spy_ass.invocado == 0
+    assert spy_remotion.invocado == 0
+
+
+def test_10_1_api_flujo_completo_pausa_en_edicion_final(
     tmp_path: Path, monkeypatch
 ) -> None:
     """El flujo completo ``POST /procesar`` (con clave) se PAUSA en
-    ``ESPERANDO_ELECCION_RENDER`` sin renderizar, y ``POST /render`` lo completa.
+    ``ESPERANDO_EDICION_FINAL`` sin renderizar, y ``POST /render`` lo completa con
+    Remotion (spec edicion-avanzada-shorts, Req 8.1, 11.2).
 
-    Demuestra la pausa de elección de motor de extremo a extremo a través de la
-    API (Req 6.1, 8.3).
+    NOTA: el corte de silencios se desactiva en los ajustes porque el endpoint
+    ``POST /silencios`` (tarea 5.1) aún no está integrado; así el pipeline
+    continúa directamente a la edición final sin la pausa de silencios (Req 1.5).
     """
     _isolar_workdir(monkeypatch, tmp_path)
 
@@ -364,8 +398,13 @@ def test_10_1_api_flujo_completo_pausa_en_eleccion_render(
     spy_remotion = _SpyMotor("remotion")
 
     manager = JobManager()
-    # Fase 1 vía runner NO admite ``fn_remotion`` en ``ejecutar_pipeline``; se
-    # inyectan solo los pasos de la fase 1 y el motor ASS para completar luego.
+    # El runner inicial (fase ejecutar_job) NO admite ``fn_remotion`` en
+    # ``ejecutar_pipeline``; se inyectan los pasos de la fase inicial y, como el
+    # render es siempre Remotion, también ``fn_remotion`` para la reanudación.
+    # ``ejecutar_pipeline`` (fase inicial) NO acepta ``fn_remotion``; se inyecta
+    # sólo con los pasos de esa fase. El doble de Remotion se añade a las
+    # inyecciones del runner DESPUÉS de la pausa (antes de la reanudación del
+    # render), que es cuando ``reanudar_pipeline`` lo consume.
     runner = JobRunner(
         manager,
         fn_unir=_fake_unir,
@@ -375,40 +414,46 @@ def test_10_1_api_flujo_completo_pausa_en_eleccion_render(
         fn_musica=lambda entrada, mwav, mus, salida, **kw: Path(salida),  # noqa: ANN001
         fn_preservar=_fake_preservar,
     )
+    ajustes = Ajustes()
+    ajustes.silencios.activado = False  # sin pausa de silencios (endpoint 5.1 no integrado)
     with _cliente(manager, runner) as client:
         resp = client.post(
             "/procesar",
             json={
                 "orden_clips": ["a", "b"],
                 "musica_id": None,
-                "ajustes": Ajustes().model_dump(),
+                "ajustes": ajustes.model_dump(),
                 "openai_api_key": CLAVE_FICTICIA,
             },
         )
         assert resp.status_code == 202, resp.text
         job_id = resp.json()["job_id"]
 
-        # El pipeline en background debe pausar en ESPERANDO_ELECCION_RENDER.
+        # El pipeline en background debe pausar en ESPERANDO_EDICION_FINAL.
         estado = _esperar_estado(
             manager,
             job_id,
-            (JobStatus.ESPERANDO_ELECCION_RENDER, JobStatus.FALLIDO),
+            (JobStatus.ESPERANDO_EDICION_FINAL, JobStatus.FALLIDO),
         )
-        assert estado == JobStatus.ESPERANDO_ELECCION_RENDER
+        assert estado == JobStatus.ESPERANDO_EDICION_FINAL
         # Aún no se renderizó nada.
         assert spy_ass.invocado == 0
         assert spy_remotion.invocado == 0
 
-        # Elegir ffmpeg (ass) reanuda y completa.
-        resp = client.post(f"/render/{job_id}", json={"motor": "ass"})
+        # Ahora que la fase inicial terminó, se añade el doble de Remotion para
+        # la reanudación del render (no interfiere con ``ejecutar_pipeline``).
+        runner._inyecciones["fn_remotion"] = spy_remotion.como_remotion()
+
+        # Confirmar la edición final reanuda y completa (siempre Remotion).
+        resp = client.post(f"/render/{job_id}", json={})
         assert resp.status_code == 202, resp.text
 
     estado = _esperar_estado(
         manager, job_id, (JobStatus.COMPLETADO, JobStatus.FALLIDO)
     )
     assert estado == JobStatus.COMPLETADO
-    assert spy_ass.invocado == 1
-    assert spy_remotion.invocado == 0
+    assert spy_remotion.invocado == 1
+    assert spy_ass.invocado == 0
 
 
 # ===========================================================================
@@ -416,37 +461,33 @@ def test_10_1_api_flujo_completo_pausa_en_eleccion_render(
 # Feature: subtitulos-ia-remotion, Property 10
 # Validates: Requirements 7.4, 13.2
 # ===========================================================================
-@pytest.mark.parametrize("motor", MOTORES)
-def test_10_2_fallo_del_motor_elegido_termina_fallido_sin_fallback(
-    tmp_path: Path, monkeypatch, motor: str
+def test_10_2_fallo_de_remotion_termina_fallido_sin_fallback(
+    tmp_path: Path, monkeypatch
 ) -> None:
-    """Si el motor elegido falla, el Job termina ``FALLIDO`` con error accionable
-    ``{"paso": "SUBTITULOS", "motivo": ...}`` y el OTRO motor NO se invoca.
+    """Si el render Remotion falla, el Job termina ``FALLIDO`` con error accionable
+    ``{"paso": "SUBTITULOS", "motivo": ...}`` y NO se recurre al quemado ASS.
 
-    Sin ``VSE_SUBTITLES_FAILSOFT`` el fallo del quemado ASS también propaga a
-    FALLIDO (no hay fallback automático entre motores, Req 7.4, 13.2).
+    En el nuevo flujo (spec edicion-avanzada-shorts) el render es SIEMPRE con
+    Remotion y su fallo NO tiene fallback a otro motor (Req 11.6, y Property 10 de
+    subtitulos-ia-remotion, Req 7.4, 13.2).
     """
     _isolar_workdir(monkeypatch, tmp_path)
     # Asegurar que el fail-soft de subtítulos está desactivado (comportamiento
-    # por defecto): el fallo del motor ASS debe propagar a FALLIDO.
+    # por defecto): el fallo de Remotion debe propagar a FALLIDO.
     monkeypatch.delenv("VSE_SUBTITLES_FAILSOFT", raising=False)
 
-    if motor == "remotion":
-        spy_ass = _SpyMotor("ass")  # no debe invocarse
-        spy_remotion = _SpyMotor("remotion", error=RemotionError("Node ausente"))
-    else:
-        spy_ass = _SpyMotor("ass", error=SubtitulosError("ffmpeg falló"))
-        spy_remotion = _SpyMotor("remotion")  # no debe invocarse
+    spy_ass = _SpyMotor("ass")  # no debe invocarse (render siempre Remotion)
+    spy_remotion = _SpyMotor("remotion", error=RemotionError("Node ausente"))
 
     manager = JobManager()
     manager.crear_job("job-10-2", ["a"], Ajustes(), workdir="wd")
-    manager.marcar_esperando_eleccion_render(
+    manager.marcar_esperando_edicion_final(
         "job-10-2", str(tmp_path / "cortado.mp4"), _grupos_finales()
     )
 
     runner = JobRunner(manager, **_fakes_render(spy_ass, spy_remotion))
     with _cliente(manager, runner) as client:
-        resp = client.post("/render/job-10-2", json={"motor": motor})
+        resp = client.post("/render/job-10-2", json={})
         assert resp.status_code == 202, resp.text
 
     estado = _esperar_estado(
@@ -460,13 +501,9 @@ def test_10_2_fallo_del_motor_elegido_termina_fallido_sin_fallback(
     assert prog.error["paso"] == PipelineStep.SUBTITULOS.value
     assert prog.error["motivo"]
 
-    # Sin fallback: el OTRO motor nunca se invoca (Req 7.4, Property 10).
-    if motor == "remotion":
-        assert spy_remotion.invocado == 1
-        assert spy_ass.invocado == 0, "No debe haber fallback al quemado ASS"
-    else:
-        assert spy_ass.invocado == 1
-        assert spy_remotion.invocado == 0, "No debe haber fallback a Remotion"
+    # Sin fallback: el quemado ASS nunca se invoca (Req 11.6, Property 10).
+    assert spy_remotion.invocado == 1
+    assert spy_ass.invocado == 0, "No debe haber fallback al quemado ASS"
 
 
 # ===========================================================================
@@ -492,6 +529,8 @@ def test_10_3_procesar_con_clave_no_persiste_ni_serializa(
     spy_ass = _SpyMotor("ass")
     spy_remotion = _SpyMotor("remotion")
     manager = JobManager()
+    # ``ejecutar_pipeline`` (fase inicial) NO acepta ``fn_remotion``; el doble de
+    # Remotion se añade a las inyecciones del runner tras la pausa (antes del render).
     runner = JobRunner(
         manager,
         fn_unir=_fake_unir,
@@ -501,28 +540,31 @@ def test_10_3_procesar_con_clave_no_persiste_ni_serializa(
         fn_musica=lambda entrada, mwav, mus, salida, **kw: Path(salida),  # noqa: ANN001
         fn_preservar=_fake_preservar,
     )
+    # El corte de silencios se desactiva (Req 1.5): el endpoint POST /silencios
+    # (tarea 5.1) aún no está integrado, así que el pipeline continúa directamente
+    # a la edición final sin la pausa de silencios.
+    ajustes = Ajustes(revision_ia=AjustesRevisionIA(activado=True))
+    ajustes.silencios.activado = False
     with _cliente(manager, runner) as client:
         resp = client.post(
             "/procesar",
             json={
                 "orden_clips": ["a", "b"],
-                "ajustes": Ajustes(
-                    revision_ia=AjustesRevisionIA(activado=True)
-                ).model_dump(),
+                "ajustes": ajustes.model_dump(),
                 "openai_api_key": CLAVE_FICTICIA,
             },
         )
         assert resp.status_code == 202, resp.text  # Req 8.3
         job_id = resp.json()["job_id"]
 
-        # Pausa en elección de motor (estado NO terminal): la clave sigue en el
-        # mapa en memoria del Gestor, pero FUERA del JobState serializado.
+        # Pausa en edición final (estado NO terminal): la clave sigue en el mapa
+        # en memoria del Gestor, pero FUERA del JobState serializado.
         estado = _esperar_estado(
             manager,
             job_id,
-            (JobStatus.ESPERANDO_ELECCION_RENDER, JobStatus.FALLIDO),
+            (JobStatus.ESPERANDO_EDICION_FINAL, JobStatus.FALLIDO),
         )
-        assert estado == JobStatus.ESPERANDO_ELECCION_RENDER
+        assert estado == JobStatus.ESPERANDO_EDICION_FINAL
 
         # La clave vive en memoria (Req 2.4) pero NO en el volcado del JobState.
         assert manager.obtener_api_key(job_id) == CLAVE_FICTICIA
@@ -533,8 +575,12 @@ def test_10_3_procesar_con_clave_no_persiste_ni_serializa(
         # config_store no escribió la clave (ni ningún archivo de config aún).
         assert config_store.cargar_ajustes() is None
 
-        # Reanudar y completar → estado terminal.
-        resp = client.post(f"/render/{job_id}", json={"motor": "ass"})
+        # Añadir el doble de Remotion para la reanudación del render (la fase
+        # inicial ya terminó, así que no interfiere con ``ejecutar_pipeline``).
+        runner._inyecciones["fn_remotion"] = spy_remotion.como_remotion()
+
+        # Confirmar la edición final (render Remotion) → estado terminal.
+        resp = client.post(f"/render/{job_id}", json={})
         assert resp.status_code == 202, resp.text
 
     estado = _esperar_estado(

@@ -59,6 +59,12 @@ def _fakes() -> Dict[str, object]:
     def fn_musica(entrada, mwav, mus, salida, **kw):  # noqa: ANN001
         return Path(salida)
 
+    def fn_remotion(entrada, grupos, sub, res, fps, props, salida, **kw):  # noqa: ANN001
+        # Doble del render Remotion: en el flujo de edición avanzada de shorts el
+        # render es SIEMPRE con Remotion (Req 11.2). Devuelve la ruta de salida
+        # sin invocar Node.
+        return Path(salida)
+
     def fn_preservar(job, tmp):  # noqa: ANN001
         return job.output_path
 
@@ -68,6 +74,7 @@ def _fakes() -> Dict[str, object]:
         fn_transcribir=fn_transcribir,
         fn_subtitulos=fn_subtitulos,
         fn_musica=fn_musica,
+        fn_remotion=fn_remotion,
         fn_preservar=fn_preservar,
     )
 
@@ -148,14 +155,14 @@ def _esperar_estado(manager: JobManager, job_id: str, objetivos, timeout: float 
     return manager.obtener(job_id).progreso.estado
 
 
-def test_post_subtitulos_reanuda_a_eleccion_render(tmp_path: Path, monkeypatch) -> None:
-    """Tras enviar los subtítulos editados, el Job se pausa para elegir motor y,
-    al elegir uno vía ``POST /render/{id}``, se renderiza hasta completar.
+def test_post_subtitulos_reanuda_a_edicion_final(tmp_path: Path, monkeypatch) -> None:
+    """Tras enviar los subtítulos editados, el Job se pausa en la edición final y,
+    al confirmar vía ``POST /render/{id}``, se renderiza (Remotion) hasta completar.
 
-    Refleja el nuevo flujo (spec subtitulos-ia-remotion, tarea 8.2): la revisión
-    manual ya NO renderiza directamente, sino que prepara los grupos finales y
-    pausa en ``ESPERANDO_ELECCION_RENDER``; el render efectivo lo dispara el
-    endpoint de elección de motor (tarea 8.1).
+    Refleja el nuevo flujo (spec edicion-avanzada-shorts): la revisión manual NO
+    renderiza directamente, sino que prepara los grupos finales y pausa en
+    ``ESPERANDO_EDICION_FINAL`` (antes ``ESPERANDO_ELECCION_RENDER``); el render
+    efectivo —SIEMPRE con Remotion— lo dispara el endpoint de edición final.
     """
     monkeypatch.setattr(config, "WORKDIR_ROOT", tmp_path / "wk")
     monkeypatch.setattr(config, "OUTPUT_ROOT", tmp_path / "out")
@@ -169,25 +176,25 @@ def test_post_subtitulos_reanuda_a_eleccion_render(tmp_path: Path, monkeypatch) 
         assert resp.status_code == 202, resp.text
         assert resp.json()["estado"] == "en_ejecucion"
 
-        # La preparación corre en background: el Job debe pausarse esperando la
-        # elección del motor (no completar directamente).
+        # La preparación corre en background: el Job debe pausarse en la edición
+        # final (no completar directamente).
         estado = _esperar_estado(
             manager,
             "job-rev3",
-            (JobStatus.ESPERANDO_ELECCION_RENDER, JobStatus.FALLIDO),
+            (JobStatus.ESPERANDO_EDICION_FINAL, JobStatus.FALLIDO),
         )
-        assert estado == JobStatus.ESPERANDO_ELECCION_RENDER
+        assert estado == JobStatus.ESPERANDO_EDICION_FINAL
 
         # GET /render devuelve los grupos finales corregidos (solo lectura).
         resp = client.get("/render/job-rev3")
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["estado"] == "esperando_eleccion_render"
+        assert body["estado"] == "esperando_edicion_final"
         assert body["editable"] is True
         assert [g["texto"] for g in body["grupos"]] == ["Hola Mundo", "Segundo Grupo"]
 
-        # POST /render con el motor elegido reanuda el render en background.
-        resp = client.post("/render/job-rev3", json={"motor": "ass"})
+        # POST /render (edición final) reanuda el render con Remotion en background.
+        resp = client.post("/render/job-rev3", json={})
         assert resp.status_code == 202, resp.text
         assert resp.json()["estado"] == "en_ejecucion"
 
@@ -303,13 +310,13 @@ def _inspector_inyectado(fn) -> Iterator[None]:
         render_api.construir_respuesta_render.__defaults__ = original
 
 
-def _job_en_eleccion_render(
+def _job_en_edicion_final(
     manager: JobManager,
     job_id: str,
     cortado_path: str,
     ajustes: Optional[Ajustes] = None,
 ) -> None:
-    """Crea un Job y lo pausa en ``ESPERANDO_ELECCION_RENDER`` con ``cortado_path``.
+    """Crea un Job y lo pausa en ``ESPERANDO_EDICION_FINAL`` con ``cortado_path``.
 
     Los ``grupos_finales`` incluyen un grupo CON palabras (para el karaoke) y
     otro SIN palabras, de modo que la respuesta ejercite ambos casos del campo
@@ -328,7 +335,7 @@ def _job_en_eleccion_render(
         ),
         GrupoSubtitulo(texto="segundo grupo", inicio_s=1.0, fin_s=2.0, palabras=None),
     ]
-    manager.marcar_esperando_eleccion_render(job_id, cortado_path, grupos)
+    manager.marcar_esperando_edicion_final(job_id, cortado_path, grupos)
 
 
 def test_get_render_con_cortado_devuelve_video_url_y_dimensiones() -> None:
@@ -341,14 +348,14 @@ def test_get_render_con_cortado_devuelve_video_url_y_dimensiones() -> None:
             resolucion=ResolucionObjetivo(ancho=720, alto=1280), fps=24
         )
     )
-    _job_en_eleccion_render(manager, "job-elec", "/tmp/wd/cortado.mp4", ajustes)
+    _job_en_edicion_final(manager, "job-elec", "/tmp/wd/cortado.mp4", ajustes)
 
     with _inspector_inyectado(_inspector_ok(9.5)), _cliente(manager) as client:
         resp = client.get("/render/job-elec")
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["estado"] == "esperando_eleccion_render"
+    assert body["estado"] == "esperando_edicion_final"
     assert body["editable"] is True
     # video_nombre / video_url derivados de cortado_path (Req 1.2).
     assert body["video_nombre"] == "cortado.mp4"
@@ -389,7 +396,7 @@ def test_get_render_inspector_falla_devuelve_duracion_null() -> None:
     con ``duracion_s = null`` sin propagar el error, conservando ``video_url``
     (best-effort, Req 1.5, 1.7)."""
     manager = JobManager()
-    _job_en_eleccion_render(manager, "job-fallo", "/tmp/wd/cortado.mp4")
+    _job_en_edicion_final(manager, "job-fallo", "/tmp/wd/cortado.mp4")
 
     with _inspector_inyectado(_inspector_falla), _cliente(manager) as client:
         resp = client.get("/render/job-fallo")
