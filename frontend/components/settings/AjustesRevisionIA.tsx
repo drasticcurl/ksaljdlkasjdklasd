@@ -6,7 +6,7 @@
  * Componente controlado: recibe el sub-objeto `revision_ia` de `Ajustes` y su
  * `onChange`. Permite:
  *   - activar/desactivar la corrección con IA (opt-in, Req 1.1);
- *   - elegir el modelo de OpenAI (por defecto `gpt-4.1-mini`, Req 11.1);
+ *   - elegir el modelo de OpenAI (por defecto `gpt-5.4-nano`, Req 11.1);
  *   - y muestra un aviso de red externa visible SOLO cuando `activado` es `true`
  *     (Req 12.1), por ser la primera dependencia de red externa del sistema.
  *

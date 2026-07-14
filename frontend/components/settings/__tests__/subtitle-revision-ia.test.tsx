@@ -33,4 +33,20 @@ describe('SubtitleSettings — revisión manual vs IA', () => {
     expect(nota).toBeInTheDocument();
     expect(nota).toHaveTextContent(/IA corrige/i);
   });
+
+  it('muestra "Aprobar subtítulos a mano" incluso con la IA activada', () => {
+    // A diferencia de `revisar`, el flag `aprobar_a_mano` debe seguir disponible
+    // con la IA encendida (permite revisar a mano lo que hizo la IA).
+    const { rerender } = render(
+      <SubtitleSettings valor={base} onChange={() => {}} />,
+    );
+    expect(
+      screen.getByTestId('campo-subtitulos.aprobar_a_mano'),
+    ).toBeInTheDocument();
+
+    rerender(<SubtitleSettings valor={base} onChange={() => {}} iaActivada />);
+    expect(
+      screen.getByTestId('campo-subtitulos.aprobar_a_mano'),
+    ).toBeInTheDocument();
+  });
 });

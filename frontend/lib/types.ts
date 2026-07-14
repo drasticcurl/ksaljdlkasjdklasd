@@ -122,6 +122,13 @@ export interface AjustesSubtitulos {
   max_palabras: number;
   /** Si es `true`, el pipeline se pausa tras transcribir para revisar el texto. */
   revisar: boolean;
+  /**
+   * Si es `true`, el pipeline se pausa para revisar/corregir a mano los
+   * subtítulos —incluida la salida de la IA si está activada— antes de
+   * renderizar. A diferencia de `revisar`, este flag puede convivir con la IA
+   * encendida (no se fuerza a `false`).
+   */
+  aprobar_a_mano: boolean;
   /** Si es `true`, todo el texto de los subtítulos se muestra en minúscula. */
   minusculas: boolean;
   /** Preset de estilo: `clasico` (línea) o `resaltado`/`bold_pop` (karaoke). */
@@ -174,7 +181,7 @@ export type MotorRender = 'ass' | 'remotion';
 export interface AjustesRevisionIA {
   /** OPT-IN: desactivado por defecto (Req 1.1). */
   activado: boolean;
-  /** Modelo de OpenAI (por defecto `gpt-4.1-mini`). */
+  /** Modelo de OpenAI (por defecto `gpt-5.4-nano`). */
   modelo: string;
   /** Timeout de la llamada a OpenAI en segundos: 1..120, def 20. */
   timeout_s: number;

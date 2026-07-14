@@ -58,10 +58,10 @@ ModoSilencio = Literal["db", "voz"]
 # Modelos de OpenAI admitidos para la corrección de subtítulos (validación de
 # conjunto en la tarea 1.2). La clave de API NUNCA se persiste (es transitoria).
 SUPPORTED_OPENAI_MODELS: FrozenSet[str] = frozenset(
-    {"gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano", "gpt-4o-mini"}
+    {"gpt-5.4-nano", "gpt-4.1-mini", "gpt-4.1", "gpt-4.1-nano", "gpt-4o-mini"}
 )
 # Modelo por defecto de la corrección con IA.
-DEFAULT_OPENAI_MODEL: str = "gpt-4.1-mini"
+DEFAULT_OPENAI_MODEL: str = "gpt-5.4-nano"
 
 # Motor de render del paso de subtítulos. Se ELIGE en tiempo de ejecución por el
 # usuario (dos botones en el frontend); NO se decide automáticamente por un
@@ -133,6 +133,12 @@ class AjustesSubtitulos(BaseModel):
     # Si está activado, el pipeline se pausa tras la transcripción para que el
     # usuario revise/edite el texto de los subtítulos antes de quemarlos.
     revisar: bool = Field(default=config.DEFAULT_SUBTITULOS_REVISAR)
+    # Si está activado, el pipeline se pausa para que el usuario revise/corrija a
+    # mano los subtítulos —incluida la salida de la IA si está activada— antes de
+    # continuar al render. A diferencia de ``revisar``, este flag NO se anula
+    # cuando la corrección con IA está activada: permite revisar a mano lo que la
+    # IA propuso antes de renderizar.
+    aprobar_a_mano: bool = Field(default=False)
     # Si está activado, todo el texto de los subtítulos se muestra en minúscula.
     minusculas: bool = Field(default=config.DEFAULT_SUBTITULOS_MINUSCULAS)
     # Preset de estilo: "clasico" (línea completa) o "resaltado"/"bold_pop"

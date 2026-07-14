@@ -494,22 +494,51 @@ def _continuar_desde_transcribir(
     # se editen. La continuación (preparar grupos + edición final) se ejecuta al
     # reanudar con :func:`reanudar_pipeline`.
     #
-    # EXCEPCIÓN: si la corrección con IA está activada (``revision_ia.activado``),
-    # la revisión manual se OMITE aunque ``revisar`` esté activo. En ese caso el
-    # flujo se automatiza: la IA corrige los grupos y el pipeline continúa
-    # directamente a ``preparar_grupos_y_pausar`` (que aplica la corrección IA y
-    # pausa en la edición final), sin la pausa de edición manual.
-    if ajustes.subtitulos.revisar and not ajustes.revision_ia.activado:
-        grupos_revision = agrupar(palabras, ajustes.subtitulos.max_palabras)
+    # Se hace revisión manual en dos casos (spec edicion-avanzada-shorts,
+    # "Aprobar subtítulos a mano"):
+    #   * ``aprobar_a_mano``: NUEVO flag que fuerza la pausa de revisión manual
+    #     SIEMPRE, incluso con la corrección con IA activada. En ese caso se
+    #     muestra al usuario lo que hizo la IA (los grupos ya corregidos) para
+    #     que pueda ajustarlos a mano antes de renderizar.
+    #   * ``revisar and not revision_ia.activado``: comportamiento PREVIO. La
+    #     revisión manual clásica solo se hacía cuando la IA estaba desactivada
+    #     (con la IA activada, ``revisar`` se omitía).
+    grupos_base = agrupar(palabras, ajustes.subtitulos.max_palabras)
+    hacer_revision_manual = ajustes.subtitulos.aprobar_a_mano or (
+        ajustes.subtitulos.revisar and not ajustes.revision_ia.activado
+    )
+    if hacer_revision_manual:
+        # Si la IA está activada, se corrige ANTES de pausar para que el usuario
+        # revise/edite a mano la salida de la IA (degradando a ``grupos_base`` si
+        # la corrección falla, igual que en ``preparar_grupos_y_pausar``). Si la
+        # IA está desactivada, se muestran los grupos base tal cual.
+        if ajustes.revision_ia.activado:
+            try:
+                grupos_propuestos = corregir_grupos_ia(
+                    grupos_base,
+                    ajustes.revision_ia,
+                    api_key,
+                    minusculas=ajustes.subtitulos.minusculas,
+                )
+            except Exception:  # noqa: BLE001 - la IA nunca debe tumbar el pipeline
+                logger.warning(
+                    "Sub-paso de corrección IA degradado por excepción "
+                    "inesperada; se muestran los grupos sin corregir"
+                )
+                grupos_propuestos = grupos_base
+        else:
+            grupos_propuestos = grupos_base
         logger.info(
-            "Pipeline en pausa para revisión manual de subtítulos (%d grupos)",
-            len(grupos_revision),
+            "Pipeline en pausa para revisión manual de subtítulos (%d grupos, "
+            "IA=%s)",
+            len(grupos_propuestos),
+            ajustes.revision_ia.activado,
         )
         return ResultadoPipeline(
             exito=False,
             pendiente_revision=True,
             cortado=Path(cortado_path),
-            grupos=grupos_revision,
+            grupos=grupos_propuestos,
         )
 
     # -------------------- Parte A del paso SUBTITULOS: preparar y PAUSAR --------
@@ -647,6 +676,7 @@ def preparar_grupos_y_pausar(
     palabras: Optional[List[Any]] = None,
     grupos: Optional[List[GrupoSubtitulo]] = None,
     api_key: Optional[str] = None,
+    aplicar_ia: bool = True,
     reporter: ReporteProgreso = _reporter_noop,
     fn_agrupar: Callable[..., List[GrupoSubtitulo]] = agrupar,
     fn_corregir_ia: Callable[..., List[GrupoSubtitulo]] = corregir_grupos_ia,
@@ -690,6 +720,12 @@ def preparar_grupos_y_pausar(
             ``palabras``.
         api_key: Clave transitoria de OpenAI para el sub-paso de IA (Req 2.4).
             Nunca se registra en logs.
+        aplicar_ia: Si es ``False``, NO se invoca ``fn_corregir_ia`` y se usan los
+            grupos tal cual (se saltan la corrección con IA). Se usa al REANUDAR
+            desde la revisión manual "Aprobar subtítulos a mano": los grupos ya
+            fueron aprobados por el usuario (y, si la IA estaba activada, ya se
+            corrigieron ANTES de la pausa), así que volver a pasar la IA sería una
+            doble corrección. Por defecto ``True`` (comportamiento previo).
         reporter: Callback de progreso inyectable (Req 6.4, 10.5).
         fn_agrupar: Implementación de la agrupación, inyectable para pruebas.
         fn_corregir_ia: Implementación de la corrección con IA, inyectable para
@@ -721,19 +757,27 @@ def preparar_grupos_y_pausar(
     # (2) Sub-paso IA opcional. ``corregir_grupos_ia`` degrada con gracia por
     # diseño; el try/except es una salvaguarda extra para que ESTE sub-paso NUNCA
     # pueda tumbar el pipeline (Req 1.2, 5.3).
-    try:
-        grupos_finales = fn_corregir_ia(
-            grupos_base,
-            ajustes.revision_ia,
-            api_key,
-            minusculas=ajustes.subtitulos.minusculas,
-        )
-    except Exception:  # noqa: BLE001 - la IA nunca debe tumbar el pipeline (Req 5.3)
-        logger.warning(
-            "Sub-paso de corrección IA degradado por excepción inesperada; "
-            "se usan los grupos sin corregir"
-        )
+    #
+    # Con ``aplicar_ia=False`` (reanudación tras "Aprobar subtítulos a mano") se
+    # OMITE la corrección: los grupos ya vienen aprobados por el usuario y, si la
+    # IA estaba activada, ya se aplicó antes de la pausa. Volver a pasarla sería
+    # una doble corrección sobre el texto ya revisado a mano.
+    if not aplicar_ia:
         grupos_finales = grupos_base
+    else:
+        try:
+            grupos_finales = fn_corregir_ia(
+                grupos_base,
+                ajustes.revision_ia,
+                api_key,
+                minusculas=ajustes.subtitulos.minusculas,
+            )
+        except Exception:  # noqa: BLE001 - la IA nunca debe tumbar el pipeline (Req 5.3)
+            logger.warning(
+                "Sub-paso de corrección IA degradado por excepción inesperada; "
+                "se usan los grupos sin corregir"
+            )
+            grupos_finales = grupos_base
 
     # (3) PAUSA: elección manual del motor. No se renderiza ni se conserva nada.
     _reportar(reporter, JobStatus.EN_EJECUCION, 4, PipelineStep.SUBTITULOS, medio,

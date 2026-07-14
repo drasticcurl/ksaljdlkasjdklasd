@@ -29,17 +29,29 @@ import fc from 'fast-check';
 
 // Stub de `@remotion/player`: en jsdom el Player real no puede reproducir vídeo.
 // Se sustituye por un elemento inerte que expone el `videoSrc` para poder
-// aseverar (si hiciera falta) que el fondo es el vídeo unido.
-vi.mock('@remotion/player', () => ({
-  Player: (props: { inputProps?: { videoSrc?: string } }) => (
-    <div
-      data-testid="player-mock"
-      data-video-src={props.inputProps?.videoSrc ?? ''}
-    />
-  ),
-}));
+// aseverar (si hiciera falta) que el fondo es el vídeo unido. Se usa
+// `forwardRef` porque el timeline pasa un `ref` al Player (para el scrubbing);
+// el ref se ignora en el stub (queda `null`, y los efectos lo comprueban).
+vi.mock('@remotion/player', async () => {
+  const React = await import('react');
+  return {
+    Player: React.forwardRef(
+      (props: { inputProps?: { videoSrc?: string } }, _ref: unknown) => (
+        <div
+          data-testid="player-mock"
+          data-video-src={props.inputProps?.videoSrc ?? ''}
+        />
+      ),
+    ),
+  };
+});
 
-import TimelineSilencios, { normalizarTramos } from '../TimelineSilencios';
+import TimelineSilencios, {
+  cutFrameATiempoOriginal,
+  normalizarTramos,
+  segmentosConservar,
+  tiempoOriginalACutFrame,
+} from '../TimelineSilencios';
 import type { SilenciosEdicion, TramoSilencio } from '@/lib/types';
 
 // Número de iteraciones por propiedad (>= 100 exigido por Req 19.6).
@@ -193,6 +205,130 @@ describe('normalizarTramos (casos borde)', () => {
 });
 
 // ===========================================================================
+// segmentosConservar — complemento de los tramos (preview recortada, Req 4.1)
+// ===========================================================================
+
+describe('segmentosConservar (complemento de tramos a borrar)', () => {
+  it('sin tramos: conserva todo el vídeo en un único segmento', () => {
+    expect(segmentosConservar([], 10)).toEqual([{ inicioS: 0, finS: 10 }]);
+  });
+
+  it('un tramo central produce dos segmentos (antes y después)', () => {
+    const tramos: TramoSilencio[] = [{ inicio_s: 4, fin_s: 6 }];
+    expect(segmentosConservar(tramos, 10)).toEqual([
+      { inicioS: 0, finS: 4 },
+      { inicioS: 6, finS: 10 },
+    ]);
+  });
+
+  it('borrar todo el metraje deja la lista vacía', () => {
+    const tramos: TramoSilencio[] = [{ inicio_s: 0, fin_s: 10 }];
+    expect(segmentosConservar(tramos, 10)).toEqual([]);
+  });
+
+  it('dos tramos separados producen tres segmentos', () => {
+    const tramos: TramoSilencio[] = [
+      { inicio_s: 2, fin_s: 3 },
+      { inicio_s: 6, fin_s: 7 },
+    ];
+    expect(segmentosConservar(tramos, 10)).toEqual([
+      { inicioS: 0, finS: 2 },
+      { inicioS: 3, finS: 6 },
+      { inicioS: 7, finS: 10 },
+    ]);
+  });
+
+  it('un tramo pegado al inicio deja solo la cola', () => {
+    const tramos: TramoSilencio[] = [{ inicio_s: 0, fin_s: 4 }];
+    expect(segmentosConservar(tramos, 10)).toEqual([{ inicioS: 4, finS: 10 }]);
+  });
+
+  it('sanea (fusiona/ordena) los tramos antes de calcular el complemento', () => {
+    // Tramos desordenados y solapados: se normalizan a [2,6] antes de complementar.
+    const tramos: TramoSilencio[] = [
+      { inicio_s: 4, fin_s: 6 },
+      { inicio_s: 2, fin_s: 5 },
+    ];
+    expect(segmentosConservar(tramos, 10)).toEqual([
+      { inicioS: 0, finS: 2 },
+      { inicioS: 6, finS: 10 },
+    ]);
+  });
+
+  it('duración no positiva devuelve lista vacía', () => {
+    expect(segmentosConservar([{ inicio_s: 1, fin_s: 2 }], 0)).toEqual([]);
+    expect(segmentosConservar([], -3)).toEqual([]);
+  });
+
+  it('es una función pura: no muta la lista de entrada', () => {
+    const tramos: TramoSilencio[] = [{ inicio_s: 4, fin_s: 6 }];
+    const copia = tramos.map((t) => ({ ...t }));
+    segmentosConservar(tramos, 10);
+    expect(tramos).toEqual(copia);
+  });
+
+  it('PBT: la duración total conservada + borrada == duración (Req 19)', () => {
+    fc.assert(
+      fc.property(arbTramos, arbDuracion, (tramos, duracion) => {
+        const conservar = segmentosConservar(tramos, duracion);
+        const borrar = normalizarTramos(tramos, duracion);
+        const sum = (pares: { a: number; b: number }[]) =>
+          pares.reduce((acc, p) => acc + (p.b - p.a), 0);
+        const totalConservar = sum(
+          conservar.map((s) => ({ a: s.inicioS, b: s.finS })),
+        );
+        const totalBorrar = sum(
+          borrar.map((t) => ({ a: t.inicio_s, b: t.fin_s })),
+        );
+        // El complemento cubre exactamente lo que no se borra (salvo epsilon fp).
+        expect(totalConservar + totalBorrar).toBeCloseTo(duracion, 6);
+      }),
+      { numRuns: NUM_RUNS },
+    );
+  });
+});
+
+// ===========================================================================
+// Mapeo cut-time <-> tiempo original (cursor y seek de la preview, Req 4.1)
+// ===========================================================================
+
+describe('cutFrameATiempoOriginal / tiempoOriginalACutFrame', () => {
+  // Vídeo de 10 s a 30 fps con un tramo rojo central [4, 6]:
+  // segmentos a conservar = [0,4] (120 frames) y [6,10] (120 frames).
+  const fps = 30;
+  const segmentos = segmentosConservar([{ inicio_s: 4, fin_s: 6 }], 10);
+
+  it('mapea el cut-frame al tiempo original saltando el tramo rojo', () => {
+    // Inicio del cut-time -> inicio original.
+    expect(cutFrameATiempoOriginal(0, segmentos, fps)).toBeCloseTo(0, 6);
+    // Frame 60 (2 s de cut) cae en el primer segmento [0,4] -> 2 s original.
+    expect(cutFrameATiempoOriginal(60, segmentos, fps)).toBeCloseTo(2, 6);
+    // Frame 120 = fin del primer segmento -> inicio del segundo (6 s original).
+    expect(cutFrameATiempoOriginal(120, segmentos, fps)).toBeCloseTo(6, 6);
+    // Frame 150 (1 s dentro del segundo segmento) -> 7 s original.
+    expect(cutFrameATiempoOriginal(150, segmentos, fps)).toBeCloseTo(7, 6);
+  });
+
+  it('un tiempo original dentro del tramo rojo salta al inicio del siguiente segmento (cut-frame)', () => {
+    // 5 s original está en el tramo rojo [4,6]: se ancla al inicio del segundo
+    // segmento, cuyo cut-frame es 120.
+    expect(tiempoOriginalACutFrame(5, segmentos, fps)).toBe(120);
+  });
+
+  it('ida y vuelta coherente en tiempos que caen dentro de un segmento', () => {
+    // 7 s original -> cut-frame 150 -> de vuelta 7 s.
+    const cut = tiempoOriginalACutFrame(7, segmentos, fps);
+    expect(cut).toBe(150);
+    expect(cutFrameATiempoOriginal(cut, segmentos, fps)).toBeCloseTo(7, 6);
+  });
+
+  it('sin segmentos devuelve 0 en ambos sentidos', () => {
+    expect(cutFrameATiempoOriginal(10, [], fps)).toBe(0);
+    expect(tiempoOriginalACutFrame(3, [], fps)).toBe(0);
+  });
+});
+
+// ===========================================================================
 // Pruebas de componente (Testing Library + jsdom)
 // ===========================================================================
 
@@ -277,6 +413,43 @@ describe('TimelineSilencios (componente)', () => {
     // En éxito (202) se notifica al padre para que siga el progreso.
     await waitFor(() => expect(onEnviado).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('timeline-error')).toBeNull();
+  });
+
+  it('con video_url y segmentos, monta la preview recortada y la barra de posición', async () => {
+    const datos = datosSilencios({
+      video_url: 'http://127.0.0.1:8000/workfile/job-123/unido.mp4',
+      // Tramo central: quedan segmentos [0,1] y [2,10] a conservar.
+      tramos: [{ inicio_s: 1, fin_s: 2 }],
+    });
+    const obtenerFn = vi.fn().mockResolvedValue(datos);
+
+    render(<TimelineSilencios jobId="job-123" obtenerFn={obtenerFn} />);
+
+    // Se monta la preview (con el vídeo unido) y la barra de posición.
+    expect(await screen.findByTestId('timeline-preview')).toBeInTheDocument();
+    expect(screen.getByTestId('timeline-barra-progreso')).toBeInTheDocument();
+    const player = screen.getByTestId('player-mock');
+    expect(player).toHaveAttribute('data-video-src', datos.video_url);
+    // No hay estado vacío mientras queden segmentos.
+    expect(screen.queryByTestId('timeline-preview-vacia')).toBeNull();
+  });
+
+  it('si se marca todo el metraje para borrar, muestra el estado vacío (sin Player)', async () => {
+    const datos = datosSilencios({
+      video_url: 'http://127.0.0.1:8000/workfile/job-123/unido.mp4',
+      // Un único tramo que cubre TODO el vídeo => no queda nada que conservar.
+      tramos: [{ inicio_s: 0, fin_s: 10 }],
+    });
+    const obtenerFn = vi.fn().mockResolvedValue(datos);
+
+    render(<TimelineSilencios jobId="job-123" obtenerFn={obtenerFn} />);
+
+    // Estado vacío en lugar del Player/preview.
+    expect(
+      await screen.findByTestId('timeline-preview-vacia'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('timeline-preview')).toBeNull();
+    expect(screen.queryByTestId('player-mock')).toBeNull();
   });
 
   it('cuando el Job no es editable, "Confirmar" queda deshabilitado', async () => {
