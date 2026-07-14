@@ -17,11 +17,19 @@ from fastapi.testclient import TestClient
 import main
 from app import config
 from app.api import process as process_api
+from app.api import render as render_api
 from app.deps import checker as _deps_checker
+from app.engine.ffprobe import ClipInfo, ClipInspeccionError
 from app.jobs.manager import JobManager
 from app.jobs.runner import JobRunner
 from app.models.job import JobStatus, PipelineStep
-from app.models.settings import Ajustes, GrupoSubtitulo
+from app.models.settings import (
+    Ajustes,
+    AjustesGenerales,
+    GrupoSubtitulo,
+    Palabra,
+    ResolucionObjetivo,
+)
 from app.storage import config_store
 from app.storage.workdir import JobWorkdir
 
@@ -238,3 +246,169 @@ def test_configuracion_put_rechaza_invalido(tmp_path: Path, monkeypatch) -> None
         assert "generales.fps" in resp.json()["error"]["details"]["campos_invalidos"]
         # No se guardó nada.
         assert config_store.cargar_ajustes() is None
+
+
+
+# ---------------------------------------------------------------------------
+# GET /render/{id}: contrato ampliado con datos del vídeo real (spec
+# previsualizacion-video-real-remotion, tarea 1.4; Req 1.1, 1.2, 1.3, 1.5, 1.7)
+# ---------------------------------------------------------------------------
+def _inspector_ok(duracion_s: Optional[float]):
+    """Devuelve un inspector de clips falso que no lanza y expone ``duracion_s``.
+
+    Se usa para simular una inspección exitosa del vídeo cortado sin depender de
+    ``ffprobe`` real, de modo que ``GET /render`` devuelva un ``duracion_s``
+    determinista.
+    """
+
+    def _fn(ruta: str) -> ClipInfo:
+        return ClipInfo(
+            ruta=ruta,
+            ancho=1080,
+            alto=1920,
+            rotacion=0,
+            fps=30.0,
+            duracion_s=duracion_s,
+            tiene_video=True,
+            tiene_audio=True,
+        )
+
+    return _fn
+
+
+def _inspector_falla(ruta: str) -> ClipInfo:
+    """Inspector que SIEMPRE falla (simula ffprobe ausente / clip corrupto).
+
+    Permite verificar el comportamiento best-effort de ``GET /render``: la
+    inspección de la duración falla pero el endpoint responde ``200`` con
+    ``duracion_s = null`` sin propagar el error (Req 1.5).
+    """
+    raise ClipInspeccionError(ruta, "ffprobe no disponible")
+
+
+@contextmanager
+def _inspector_inyectado(fn) -> Iterator[None]:
+    """Inyecta ``fn`` como inspector por defecto de ``construir_respuesta_render``.
+
+    El endpoint ``GET /render`` llama a ``construir_respuesta_render(job)`` usando
+    su inspector por defecto (``inspeccionar_clip``); para las pruebas de endpoint
+    se sustituye ese valor por defecto por un doble determinista y se restaura al
+    salir del contexto.
+    """
+    original = render_api.construir_respuesta_render.__defaults__
+    render_api.construir_respuesta_render.__defaults__ = (fn,)
+    try:
+        yield
+    finally:
+        render_api.construir_respuesta_render.__defaults__ = original
+
+
+def _job_en_eleccion_render(
+    manager: JobManager,
+    job_id: str,
+    cortado_path: str,
+    ajustes: Optional[Ajustes] = None,
+) -> None:
+    """Crea un Job y lo pausa en ``ESPERANDO_ELECCION_RENDER`` con ``cortado_path``.
+
+    Los ``grupos_finales`` incluyen un grupo CON palabras (para el karaoke) y
+    otro SIN palabras, de modo que la respuesta ejercite ambos casos del campo
+    ``palabras`` (Req 1.6).
+    """
+    manager.crear_job(job_id, ["a"], ajustes or Ajustes(), workdir="wd")
+    grupos = [
+        GrupoSubtitulo(
+            texto="hola mundo",
+            inicio_s=0.0,
+            fin_s=1.0,
+            palabras=[
+                Palabra(texto="hola", inicio_s=0.0, fin_s=0.5),
+                Palabra(texto="mundo", inicio_s=0.5, fin_s=1.0),
+            ],
+        ),
+        GrupoSubtitulo(texto="segundo grupo", inicio_s=1.0, fin_s=2.0, palabras=None),
+    ]
+    manager.marcar_esperando_eleccion_render(job_id, cortado_path, grupos)
+
+
+def test_get_render_con_cortado_devuelve_video_url_y_dimensiones() -> None:
+    """Con ``cortado_path`` definido, ``GET /render`` devuelve ``video_url``
+    correcta, ``video_nombre``, dimensiones/fps de ``ajustes.generales`` y la
+    duración inspeccionada; los grupos conservan ``palabras`` (Req 1.1, 1.2, 1.6)."""
+    manager = JobManager()
+    ajustes = Ajustes(
+        generales=AjustesGenerales(
+            resolucion=ResolucionObjetivo(ancho=720, alto=1280), fps=24
+        )
+    )
+    _job_en_eleccion_render(manager, "job-elec", "/tmp/wd/cortado.mp4", ajustes)
+
+    with _inspector_inyectado(_inspector_ok(9.5)), _cliente(manager) as client:
+        resp = client.get("/render/job-elec")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["estado"] == "esperando_eleccion_render"
+    assert body["editable"] is True
+    # video_nombre / video_url derivados de cortado_path (Req 1.2).
+    assert body["video_nombre"] == "cortado.mp4"
+    assert body["video_url"] == (
+        f"http://{config.BACKEND_HOST}:{config.BACKEND_PORT}"
+        "/workfile/job-elec/cortado.mp4"
+    )
+    # fps/ancho/alto reflejan ajustes.generales (Req 1.4).
+    assert body["fps"] == 24
+    assert body["ancho"] == 720
+    assert body["alto"] == 1280
+    # duracion_s refleja la inspección exitosa (Req 1.5).
+    assert body["duracion_s"] == 9.5
+    # grupos conservan palabras: primero con palabras, segundo con null (Req 1.6).
+    assert [g["texto"] for g in body["grupos"]] == ["hola mundo", "segundo grupo"]
+    assert [p["texto"] for p in body["grupos"][0]["palabras"]] == ["hola", "mundo"]
+    assert body["grupos"][1]["palabras"] is None
+
+
+def test_get_render_sin_cortado_devuelve_nulls() -> None:
+    """Sin ``cortado_path``, ``video_url``/``video_nombre``/``duracion_s`` son
+    ``null`` y no se intenta inspeccionar vídeo alguno (Req 1.3, 1.5)."""
+    manager = JobManager()
+    manager.crear_job("job-sin", ["a"], Ajustes(), workdir="wd")
+
+    with _cliente(manager) as client:
+        resp = client.get("/render/job-sin")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["video_url"] is None
+    assert body["video_nombre"] is None
+    assert body["duracion_s"] is None
+
+
+def test_get_render_inspector_falla_devuelve_duracion_null() -> None:
+    """Si la inspección de la duración falla, ``GET /render`` responde ``200``
+    con ``duracion_s = null`` sin propagar el error, conservando ``video_url``
+    (best-effort, Req 1.5, 1.7)."""
+    manager = JobManager()
+    _job_en_eleccion_render(manager, "job-fallo", "/tmp/wd/cortado.mp4")
+
+    with _inspector_inyectado(_inspector_falla), _cliente(manager) as client:
+        resp = client.get("/render/job-fallo")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["video_url"] == (
+        f"http://{config.BACKEND_HOST}:{config.BACKEND_PORT}"
+        "/workfile/job-fallo/cortado.mp4"
+    )
+    assert body["video_nombre"] == "cortado.mp4"
+    # La inspección falló: duracion_s es null sin lanzar (Req 1.5).
+    assert body["duracion_s"] is None
+
+
+def test_get_render_job_inexistente_404() -> None:
+    """``GET /render`` sobre un Job inexistente responde ``404 JOB_NOT_FOUND``."""
+    with _cliente(JobManager()) as client:
+        resp = client.get("/render/no-existe")
+
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "JOB_NOT_FOUND"

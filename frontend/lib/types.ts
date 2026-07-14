@@ -276,6 +276,34 @@ export interface GrupoSubtitulo {
   fin_s: number;
 }
 
+/**
+ * Palabra transcrita con tiempos en segundos (para el karaoke de la preview).
+ *
+ * Los tiempos pueden ser `null` cuando la transcripción no aporta timing por
+ * palabra; en ese caso la palabra hereda los tiempos del grupo (mismo criterio
+ * que `backend/app/engine/remotion.py`).
+ */
+export interface PalabraSubtitulo {
+  texto: string;
+  inicio_s: number | null;
+  fin_s: number | null;
+}
+
+/**
+ * Grupo de subtítulo con palabras opcionales (respuesta ampliada de
+ * `GET /render/{id}`, spec previsualizacion-video-real-remotion).
+ *
+ * Es retrocompatible con `GrupoSubtitulo`: añade únicamente `palabras`, que
+ * puede faltar o ser `null` cuando el grupo no tiene timing por palabra.
+ */
+export interface GrupoSubtituloConPalabras {
+  texto: string;
+  inicio_s: number;
+  fin_s: number;
+  /** Palabras con tiempos; puede faltar (grupos sin timing por palabra). */
+  palabras?: PalabraSubtitulo[] | null;
+}
+
 /** Respuesta de `GET /subtitulos/{id}`. */
 export interface SubtitulosRevision {
   job_id: string;
@@ -285,11 +313,15 @@ export interface SubtitulosRevision {
 }
 
 /**
- * Respuesta de `GET /render/{id}` (spec subtitulos-ia-remotion).
+ * Respuesta de `GET /render/{id}` (spec subtitulos-ia-remotion, ampliada por
+ * spec previsualizacion-video-real-remotion).
  *
  * Se consulta cuando el Job está en `esperando_eleccion_render`: expone los
  * grupos de subtítulo ya corregidos (solo lectura) y la preselección de motor
- * para resaltar el botón sugerido.
+ * para resaltar el botón sugerido. La ampliación añade los datos del vídeo real
+ * de fondo (URL, dimensiones, fps y duración) necesarios para montar la
+ * previsualización con `@remotion/player`. Los campos nuevos son aditivos y no
+ * rompen los usos actuales del contrato.
  */
 export interface RenderEleccion {
   job_id: string;
@@ -298,8 +330,24 @@ export interface RenderEleccion {
   editable: boolean;
   /** Preselección de UI del botón a resaltar. */
   motor_preferido: MotorRender;
-  /** Subtítulos corregidos, en solo lectura, para revisar antes de elegir motor. */
-  grupos: GrupoSubtitulo[];
+  /**
+   * Subtítulos corregidos, en solo lectura, para revisar antes de elegir motor.
+   * Cada grupo puede incluir `palabras` con tiempos (para el karaoke); el tipo
+   * es retrocompatible con `GrupoSubtitulo`.
+   */
+  grupos: GrupoSubtituloConPalabras[];
+  /** URL HTTP del vídeo de fondo ya cortado; `null` si no hay `cortado_path`. */
+  video_url: string | null;
+  /** Nombre de archivo del vídeo cortado; `null` si no hay `cortado_path`. */
+  video_nombre: string | null;
+  /** Cuadros por segundo del render, tomado de `ajustes.generales`. */
+  fps: number;
+  /** Ancho en píxeles del render, tomado de `ajustes.generales`. */
+  ancho: number;
+  /** Alto en píxeles del render, tomado de `ajustes.generales`. */
+  alto: number;
+  /** Duración inspeccionada del vídeo cortado (best-effort); `null` si falla. */
+  duracion_s: number | null;
 }
 
 /** Respuesta de `GET`/`PUT` `/configuracion`. */

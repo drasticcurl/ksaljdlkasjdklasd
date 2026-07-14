@@ -1,0 +1,479 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Añadir los campos del vídeo y dimensiones a la respuesta": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143786
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965156025
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965393282
+      }
+    ],
+    "1.2 Inspección best-effort de la duración del vídeo cortado": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143792
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965406374
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965590894
+      }
+    ],
+    "1.3 [PBT] Propiedad: la respuesta de `GET /render` es consistente y de solo lectura": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143795
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965611186
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965867236
+      }
+    ],
+    "1.4 Tests de endpoint para el contrato ampliado": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143798
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965876195
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783966216380
+      }
+    ],
+    "2.1 Ampliar los tipos de `RenderEleccion` y `GrupoSubtitulo`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143800
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783966223909
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783966504389
+      }
+    ],
+    "2.2 Implementar el mapeo `grupoBackendARemotion` (segundos → ms)": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143803
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783966508026
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783966839491
+      }
+    ],
+    "2.3 Implementar `calcularDurationInFrames`, `estiloDesdeAjustes` y `ajustesConEstilo`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143805
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783966846193
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783967261015
+      }
+    ],
+    "2.4 [PBT] Propiedades de coherencia y round-trip": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143808
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783967280278
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783967662260
+      }
+    ],
+    "2.5 Añadir `motor: \"remotion\"` reutilizando `elegirRender`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143810
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783967665324
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783967926621
+      }
+    ],
+    "3.1 Extraer `FondoVideo` en la copia SSR": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143813
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783967930439
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968117543
+      }
+    ],
+    "3.2 Extraer `FondoVideo` en la copia del navegador con `<Video>`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143815
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968124727
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968346415
+      }
+    ],
+    "4.1 Crear `EstiloSubtitulos` reutilizable": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143818
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968363702
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968592167
+      }
+    ],
+    "4.2 Hacer que `/playground` consuma `EstiloSubtitulos`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143820
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968605096
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968797614
+      }
+    ],
+    "5.1 Estructura y carga inicial del estilo": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143822
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968809130
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783969132547
+      }
+    ],
+    "5.2 Montaje del `<Player>` con el vídeo real y subtítulos": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143824
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783969135784
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783969751710
+      }
+    ],
+    "5.3 Panel de estilo (solo estilo) y re-render en vivo": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143827
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783969754313
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783969952168
+      }
+    ],
+    "5.4 Botón \"Guardar estilo\"": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143830
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783969955615
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970167199
+      }
+    ],
+    "5.5 Acción \"Confirmar y renderizar\"": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143832
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970170574
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970383682
+      }
+    ],
+    "5.6 Manejo de errores de carga del vídeo": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143835
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970386856
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970703603
+      }
+    ],
+    "6.1 Toggle de previsualización y almacenamiento de datos del vídeo": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143837
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970706862
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970893488
+      }
+    ],
+    "6.2 Montaje/desmontaje de `PreviewRemotionReal`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143840
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970896769
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971114238
+      }
+    ],
+    "7.1 Tests de `PreviewRemotionReal`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143842
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971119968
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971322475
+      }
+    ],
+    "7.2 Tests de `EleccionRender` con toggle": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143845
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971325289
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971478394
+      }
+    ],
+    "7.3 Test de flujo de integración": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143847
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971481363
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971680802
+      }
+    ],
+    "8. Verificación de sincronía y suites completas": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783965143850
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971683599
+      },
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971832819
+      }
+    ],
+    "1. Ampliar el contrato de `GET /render/{job_id}` en el backend": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783966216383
+      }
+    ],
+    "2. Tipos y mapeo en el frontend": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783967926624
+      }
+    ],
+    "3. Composición Remotion: motor de vídeo por entorno (sincronía)": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968346417
+      }
+    ],
+    "4. Controles de estilo reutilizables (refactor acordado)": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783968797616
+      }
+    ],
+    "5. Componente `PreviewRemotionReal`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783970703606
+      }
+    ],
+    "6. Integración en `EleccionRender`": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971114244
+      }
+    ],
+    "7. Pruebas de UI e integración": [
+      {
+        "executionId": "e5745165-ae53-4ec2-98b7-dd735e3bce25",
+        "chatSessionId": "5f1ed5ce-891f-4545-a372-89de8a90d88b",
+        "timestamp": 1783971680809
+      }
+    ]
+  }
+}
