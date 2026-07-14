@@ -22,8 +22,9 @@ Contratos de error:
 
 Al reanudar, se fusiona SOLO el texto confirmado sobre los grupos propuestos por
 el servidor (por índice): se conservan los tiempos del grupo (``inicio_s`` /
-``fin_s``) y, muy importante, los **tiempos por palabra** (``palabras``) de la
-transcripción original, sin recalcular el karaoke (Req 7.4).
+``fin_s``) pero se **vacía** el array ``palabras`` para que el motor de render
+Remotion use el texto editado en lugar de las palabras originales de la
+transcripción (evita que las ediciones se ignoren en el video renderizado).
 """
 
 from __future__ import annotations
@@ -114,10 +115,10 @@ async def enviar_subtitulos(
     """Aplica el texto editado y reanuda el pipeline (fase 2).
 
     Solo se edita el **texto** de cada grupo (contrato de SOLO TEXTO): los
-    tiempos ``inicio_s``/``fin_s`` y los tiempos por palabra (``palabras``) se
-    toman de los grupos propuestos por el servidor (por índice), de modo que el
-    usuario no pueda introducir tiempos inválidos ni se recalcule el karaoke
-    (Req 7.4).
+    tiempos ``inicio_s``/``fin_s`` se toman de los grupos propuestos por el
+    servidor (por índice), de modo que el usuario no pueda introducir tiempos
+    inválidos. El array ``palabras`` se vacía para que el motor de render Remotion
+    use el texto editado en lugar de las palabras originales de la transcripción.
 
     Validaciones (en orden), todas sin modificar el estado del Job:
 
@@ -161,8 +162,10 @@ async def enviar_subtitulos(
         )
 
     # Fusiona el texto confirmado sobre los grupos originales (por índice)
-    # conservando los tiempos del grupo y los tiempos por palabra (``palabras``)
-    # de la transcripción original: NO se recalcula el karaoke (Req 7.4).
+    # conservando los tiempos del grupo (``inicio_s``/``fin_s``). Cuando el texto
+    # se edita, se VACÍA ``palabras`` (Req 7.4 actualizado): así el motor de render
+    # Remotion usará el texto editado en lugar de las palabras originales de la
+    # transcripción, evitando que las ediciones se ignoren en el video (bug fix).
     editados: List[GrupoSubtitulo] = []
     for texto, original in zip(textos_recortados, originales):
         editados.append(
@@ -170,7 +173,7 @@ async def enviar_subtitulos(
                 texto=texto,
                 inicio_s=original.inicio_s,
                 fin_s=original.fin_s,
-                palabras=original.palabras,
+                palabras=None,  # Se vacía para que Remotion use el texto editado
             )
         )
 

@@ -2,8 +2,10 @@
 
 Este módulo corrige el texto de los :class:`~app.models.settings.GrupoSubtitulo`
 mediante un modelo de OpenAI (por defecto ``gpt-4.1-mini``), **preservando los
-tiempos por grupo** (``inicio_s``/``fin_s``) y las ``palabras``: la IA solo edita
-el campo ``texto``. Es la **única** parte del sistema que abre conexiones de red
+tiempos por grupo** (``inicio_s``/``fin_s``) pero **vaciando** ``palabras``: la
+IA solo edita el campo ``texto`` y vacía el array de palabras para que el motor
+de render Remotion use el texto corregido en lugar de las palabras originales de
+la transcripción. Es la **única** parte del sistema que abre conexiones de red
 externas (HTTPS a ``api.openai.com``) y, por ello, es estrictamente opt-in
 (Req 12.2).
 
@@ -288,8 +290,9 @@ def corregir_grupos_ia(
     * Construye el prompt (system en español; salida estructurada JSON) y empareja
       los textos corregidos por índice (Req 4.1, 4.2).
     * **Preservación de tiempos** (Req 3.1, 3.2, 3.3): el resultado tiene la misma
-      cardinalidad y conserva ``inicio_s``/``fin_s``/``palabras`` de cada grupo;
-      solo puede cambiar ``texto``.
+      cardinalidad y conserva ``inicio_s``/``fin_s`` de cada grupo; solo pueden
+      cambiar ``texto`` (que se corrige) y ``palabras`` (que se vacía para que
+      Remotion use el texto corregido).
     * **No pérdida de líneas** (Req 4.4): si un texto corregido queda vacío, se
       conserva el original de ese índice.
     * **Degradación con gracia** (Req 5.2, 5.4): ante error de red/HTTP/timeout,
@@ -311,8 +314,8 @@ def corregir_grupos_ia(
 
     Returns:
         Lista de :class:`~app.models.settings.GrupoSubtitulo` de igual cardinalidad
-        que ``grupos``, con los tiempos intactos y el texto corregido (o el
-        original ante degradación).
+        que ``grupos``, con los tiempos de grupo intactos, ``palabras`` vacío y el
+        texto corregido (o el original ante degradación).
     """
     grupos_lista: List[GrupoSubtitulo] = list(grupos)
 
@@ -352,6 +355,9 @@ def corregir_grupos_ia(
         return _copia_identidad(grupos_lista)
 
     # (4) Construcción del resultado: solo cambia ``texto`` (Req 3.3, 4.3, 4.4).
+    # Se VACÍA ``palabras`` cuando el texto se corrige (bug fix): así el motor de
+    # render Remotion usará el texto corregido en lugar de las palabras originales
+    # de la transcripción, evitando que las correcciones de la IA se ignoren.
     resultado: List[GrupoSubtitulo] = []
     for i, grupo in enumerate(grupos_lista):
         texto = textos_corregidos[i].strip()
@@ -360,9 +366,12 @@ def corregir_grupos_ia(
         # Req 4.4: no perder líneas; si queda vacío, conservar el original.
         if not texto:
             texto = grupo.texto
-        # Copia profunda con solo el texto actualizado: tiempos y palabras
-        # intactos (Req 3.1, 3.2) y sin mutar la entrada (Req 3.4).
-        resultado.append(grupo.model_copy(deep=True, update={"texto": texto}))
+        # Copia profunda con el texto actualizado y palabras vacías: los tiempos
+        # del grupo (``inicio_s``/``fin_s``) se conservan intactos (Req 3.1, 3.2)
+        # y la entrada no se muta (Req 3.4).
+        resultado.append(
+            grupo.model_copy(deep=True, update={"texto": texto, "palabras": None})
+        )
 
     # Log informativo de éxito: la IA corrió y emparejó correctamente por índice.
     # NUNCA se registra la ``api_key`` (Req 5.4, 12.2), solo el recuento y el modelo.
