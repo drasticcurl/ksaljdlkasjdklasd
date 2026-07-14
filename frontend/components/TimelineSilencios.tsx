@@ -24,12 +24,24 @@
  *      luego invocar `onEnviado?.()` para que el orquestador siga el progreso
  *      (Req 5.1).
  *
- * Previsualización en vivo (NICE-TO-HAVE, no bloqueante — Req 4.1, 4.2, 18.1):
- * si hay `video_url`, se monta `@remotion/player` con el vídeo unido como fondo
- * (reutilizando la composición `ShortVideo` sin subtítulos) y un cursor de
- * scrubbing sincronizado. Si el player no está disponible o falla la carga del
- * vídeo, se degrada con elegancia (Error Boundary) permitiendo editar/confirmar
- * los tramos SIN preview, sin bloquear el flujo de edición.
+ * Previsualización en vivo YA RECORTADA (NICE-TO-HAVE, no bloqueante — Req 4.1,
+ * 4.2, 18.1): si hay `video_url`, se monta `@remotion/player` con la composición
+ * de SOLO navegador `PreviewRecorte`, que reproduce el vídeo unido con los
+ * tramos ROJOS (a borrar) QUITADOS, concatenando los "segmentos a conservar"
+ * (complemento de los tramos en `[0, duración]`, ver {@link segmentosConservar}).
+ * La preview se recalcula EN VIVO cada vez que el usuario mueve/estira/añade/
+ * elimina un tramo. Bajo el vídeo hay una barra de posición y el cursor del
+ * timeline se sincroniza con la reproducción (mapeando el cut-time del vídeo
+ * recortado al tiempo ORIGINAL del vídeo unido, ver
+ * {@link cutFrameATiempoOriginal}). La barra ESPACIADORA reinicia la
+ * reproducción desde el principio. Si el player no está disponible o falla la
+ * carga del vídeo, se degrada con elegancia (Error Boundary) permitiendo
+ * editar/confirmar los tramos SIN preview, sin bloquear el flujo de edición.
+ *
+ * IMPORTANTE: `PreviewRecorte` es SOLO para la previsualización del navegador y
+ * NO afecta al render final: el vídeo definitivo lo recorta el backend con
+ * ffmpeg (a partir de los mismos tramos confirmados) y luego se renderiza con
+ * `ShortVideo` sobre ese vídeo ya cortado.
  */
 
 import {
@@ -44,12 +56,16 @@ import type { ReactNode } from 'react';
 import { Player } from '@remotion/player';
 import type { PlayerRef } from '@remotion/player';
 
-import { ShortVideo } from '@/components/remotion/ShortVideo';
-import type { Estilo, ShortVideoProps } from '@/components/remotion/types';
+import {
+  PreviewRecorte,
+  framesDeSegmento,
+  framesTotalesSegmentos,
+} from '@/components/remotion/PreviewRecorte';
+import type {
+  PreviewRecorteProps,
+  SegmentoConservar,
+} from '@/components/remotion/PreviewRecorte';
 import { ApiError, enviarSilencios, obtenerSilencios } from '@/lib/api';
-import { AJUSTES_POR_DEFECTO } from '@/lib/defaults';
-import { estiloDesdeAjustes } from '@/lib/estilo';
-import { calcularDurationInFrames } from '@/lib/remotion-map';
 import type { SilenciosEdicion, TramoSilencio } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -108,6 +124,102 @@ export function normalizarTramos(
   }
 
   return fusionados;
+}
+
+/**
+ * Calcula los "segmentos a CONSERVAR" del vídeo unido: el COMPLEMENTO de los
+ * tramos a borrar dentro de `[0, duración]` (design §7.1). Primero sanea los
+ * tramos con {@link normalizarTramos} (clamp + orden + fusión) y luego recorre
+ * los huecos entre ellos.
+ *
+ * Comportamiento (usado para la preview recortada en vivo, Req 4.1):
+ *   - Sin tramos a borrar  => un único segmento `[0, duración]` (todo el vídeo).
+ *   - Un tramo central `[a, b]` => dos segmentos `[0, a]` y `[b, duración]`.
+ *   - Tramos que cubren todo => lista VACÍA (no queda nada que reproducir).
+ *
+ * Es una función PURA (no muta la entrada) para poder testearla de forma
+ * aislada; se exporta con ese fin.
+ *
+ * @param tramos Lista de tramos a borrar (posiblemente desordenada/solapada).
+ * @param duracion Duración total del vídeo unido, en segundos.
+ * @returns Segmentos a conservar `{inicioS, finS}`, ordenados y sin solapes.
+ */
+export function segmentosConservar(
+  tramos: readonly TramoSilencio[],
+  duracion: number,
+): SegmentoConservar[] {
+  if (!Number.isFinite(duracion) || duracion <= 0) return [];
+
+  const aBorrar = normalizarTramos(tramos, duracion);
+  const segmentos: SegmentoConservar[] = [];
+  let cursor = 0;
+  for (const tramo of aBorrar) {
+    // Hueco entre el cursor y el inicio del siguiente tramo a borrar.
+    if (tramo.inicio_s > cursor) {
+      segmentos.push({ inicioS: cursor, finS: tramo.inicio_s });
+    }
+    cursor = Math.max(cursor, tramo.fin_s);
+  }
+  // Cola tras el último tramo a borrar (o todo el vídeo si no había tramos).
+  if (cursor < duracion) {
+    segmentos.push({ inicioS: cursor, finS: duracion });
+  }
+  return segmentos;
+}
+
+/**
+ * Convierte un frame del "tiempo comprimido" de la preview (cut-time, sobre el
+ * vídeo YA recortado) al tiempo ORIGINAL del vídeo unido, en segundos. Recorre
+ * los segmentos a conservar acumulando sus duraciones (en frames) hasta ubicar
+ * el frame; dentro del segmento, el offset se convierte a segundos y se suma a
+ * `inicioS`. Así el cursor del timeline "salta" por encima de los tramos rojos.
+ *
+ * Función PURA (exportada para pruebas).
+ */
+export function cutFrameATiempoOriginal(
+  cutFrame: number,
+  segmentos: readonly SegmentoConservar[],
+  fps: number,
+): number {
+  if (segmentos.length === 0 || fps <= 0) return 0;
+  let restante = Math.max(0, cutFrame);
+  for (const seg of segmentos) {
+    const dur = framesDeSegmento(seg, fps);
+    if (restante < dur) {
+      return seg.inicioS + restante / fps;
+    }
+    restante -= dur;
+  }
+  // Más allá del final: se fija al fin del último segmento.
+  return segmentos[segmentos.length - 1].finS;
+}
+
+/**
+ * Inversa de {@link cutFrameATiempoOriginal}: convierte un tiempo ORIGINAL del
+ * vídeo unido (segundos) al frame equivalente en el cut-time de la preview.
+ * Si el tiempo cae dentro de un tramo rojo (fuera de todo segmento), se ancla al
+ * inicio del siguiente segmento a conservar. Se usa para hacer seek en el Player
+ * al hacer clic sobre la pista original. Función PURA (exportada para pruebas).
+ */
+export function tiempoOriginalACutFrame(
+  tiempoS: number,
+  segmentos: readonly SegmentoConservar[],
+  fps: number,
+): number {
+  if (segmentos.length === 0 || fps <= 0) return 0;
+  let acumulado = 0;
+  for (const seg of segmentos) {
+    const dur = framesDeSegmento(seg, fps);
+    // El tiempo cae en la zona roja anterior a este segmento: saltar a su inicio.
+    if (tiempoS < seg.inicioS) return acumulado;
+    // El tiempo cae dentro de este segmento a conservar.
+    if (tiempoS <= seg.finS) {
+      return acumulado + Math.round((tiempoS - seg.inicioS) * fps);
+    }
+    acumulado += dur;
+  }
+  // Más allá del último segmento: fin del cut-time.
+  return acumulado;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,17 +301,6 @@ const ALTO_PREVIEW_PX = 480;
 /** Duración por defecto (segundos) de un tramo nuevo al pulsar "Añadir tramo". */
 const DURACION_TRAMO_NUEVO_S = 1.0;
 
-/**
- * Estilo por defecto para la preview. Se reutiliza la proyección centralizada
- * `estiloDesdeAjustes` (no se duplica el mapeo). En el timeline no se muestran
- * subtítulos (grupos vacíos), por lo que el estilo solo afecta a una capa que
- * no renderiza nada; se mantiene por coherencia con el contrato de la
- * composición `ShortVideo`.
- */
-const ESTILO_PREVIEW: Estilo = estiloDesdeAjustes(
-  AJUSTES_POR_DEFECTO.subtitulos,
-);
-
 /** Modo de arrastre de un bloque de la pista. */
 type ModoArrastre = 'mover' | 'inicio' | 'fin';
 
@@ -246,8 +347,13 @@ export default function TimelineSilencios({
   const [datos, setDatos] = useState<SilenciosEdicion | null>(null);
   // Lista de tramos EDITABLE (copia de trabajo saneada).
   const [tramos, setTramos] = useState<TramoSilencio[]>([]);
-  // Posición del cursor de scrubbing, en segundos (preview nice-to-have).
+  // Posición del cursor de scrubbing, en segundos del TIEMPO ORIGINAL del vídeo
+  // unido (preview nice-to-have). Se sincroniza con la reproducción de la
+  // preview recortada mapeando el cut-time -> tiempo original.
   const [cursorS, setCursorS] = useState(0);
+  // Progreso de la reproducción de la preview recortada, en fracción 0..1 del
+  // cut-time (para la barra de posición bajo el vídeo).
+  const [progresoFrac, setProgresoFrac] = useState(0);
 
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
@@ -451,12 +557,49 @@ export default function TimelineSilencios({
     }
   }, [enviando, editable, tramos, duracion, jobId, baseUrl, enviarFn, onEnviado]);
 
+  // --- Props de la composición para la preview (vídeo YA recortado en vivo) ---
+  const videoUrl = datos?.video_url ?? null;
+  const fps = datos?.fps ?? 30;
+  const ancho = datos?.ancho ?? 1080;
+  const alto = datos?.alto ?? 1920;
+
+  // Segmentos a CONSERVAR (complemento de los tramos): se recomputan EN VIVO en
+  // cada cambio de `tramos`, de modo que la preview refleje el corte al instante.
+  const segmentos = useMemo(
+    () => segmentosConservar(tramos, duracion),
+    [tramos, duracion],
+  );
+
+  // Duración total de la preview recortada = suma de las duraciones (en frames)
+  // de los segmentos a conservar (coherente con la composición `PreviewRecorte`).
+  const durationInFrames = useMemo(
+    () => framesTotalesSegmentos(segmentos, fps),
+    [segmentos, fps],
+  );
+
+  // Solo hay preview si hay vídeo unido Y queda al menos un segmento (si se
+  // borra todo, se muestra un estado vacío en su lugar).
+  const hayPreview = Boolean(videoUrl) && segmentos.length > 0;
+
+  const inputPreview: PreviewRecorteProps = useMemo(
+    () => ({
+      videoSrc: videoUrl ?? '',
+      fps,
+      width: ancho,
+      height: alto,
+      segmentos,
+    }),
+    [videoUrl, fps, ancho, alto, segmentos],
+  );
+
   // --- Scrubbing en la pista (mueve el cursor y hace seek en el Player) ---
 
   /**
-   * Al hacer clic en la zona vacía de la pista, mueve el cursor a esa posición
-   * temporal (dentro de `[0, duracion]`) y sincroniza el Player si está montado
-   * (Req 4.1). Es nice-to-have: si no hay Player, solo actualiza el cursor.
+   * Al hacer clic en la zona de la pista (tiempo ORIGINAL), mueve el cursor a esa
+   * posición y hace seek en el Player, convirtiendo el tiempo original al frame
+   * equivalente del cut-time de la preview recortada (Req 4.1). Si el clic cae en
+   * un tramo rojo, el Player salta al inicio del siguiente segmento a conservar.
+   * Es nice-to-have: si no hay Player, solo actualiza el cursor.
    */
   const alClicPista = useCallback(
     (e: React.PointerEvent) => {
@@ -466,43 +609,66 @@ export default function TimelineSilencios({
       const px = e.clientX - rect.left;
       const seg = Math.max(0, Math.min(pxASegundos(px), duracion));
       setCursorS(seg);
-      // Seek best-effort del Player (si está montado y disponible).
+      // Seek best-effort del Player (si está montado y disponible): se mapea el
+      // tiempo original -> frame del cut-time de la preview recortada.
       try {
-        const fps = datos?.fps ?? 30;
-        playerRef.current?.seekTo(Math.round(seg * fps));
+        const cutFrame = tiempoOriginalACutFrame(seg, segmentos, fps);
+        playerRef.current?.seekTo(cutFrame);
       } catch {
         // La preview es opcional: un fallo de seek no afecta a la edición.
       }
     },
-    [duracion, pxASegundos, datos],
+    [duracion, pxASegundos, segmentos, fps],
   );
 
-  // --- Props de la composición para la preview (fondo = vídeo unido) ---
-  const videoUrl = datos?.video_url ?? null;
-  const fps = datos?.fps ?? 30;
-  const ancho = datos?.ancho ?? 1080;
-  const alto = datos?.alto ?? 1920;
+  /**
+   * Sincroniza el cursor del timeline y la barra de posición con la reproducción
+   * de la preview recortada (Req 4.1). El Player emite `frameupdate` con el frame
+   * actual en cut-time; se mapea a tiempo ORIGINAL para el cursor y a fracción
+   * 0..1 para la barra. El listener se re-registra cuando cambian los segmentos
+   * (nueva preview) o hay/deja de haber Player.
+   */
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    const alActualizarFrame = (e: { detail: { frame: number } }) => {
+      const frameActual = e.detail.frame;
+      setProgresoFrac(
+        durationInFrames > 0 ? frameActual / durationInFrames : 0,
+      );
+      setCursorS(cutFrameATiempoOriginal(frameActual, segmentos, fps));
+    };
+    player.addEventListener('frameupdate', alActualizarFrame);
+    return () => {
+      player.removeEventListener('frameupdate', alActualizarFrame);
+    };
+  }, [segmentos, fps, durationInFrames, hayPreview]);
 
-  const durationInFrames = useMemo(
-    () => calcularDurationInFrames(duracion, fps, []),
-    [duracion, fps],
-  );
-
-  const inputPreview: ShortVideoProps = useMemo(
-    () => ({
-      videoSrc: videoUrl ?? '',
-      fps,
-      width: ancho,
-      height: alto,
-      durationInFrames,
-      estilo: ESTILO_PREVIEW,
-      combineTokensWithinMs: AJUSTES_POR_DEFECTO.render.combine_tokens_ms,
-      // Sin subtítulos ni textos extra: el timeline solo muestra el vídeo unido.
-      grupos: [],
-      textosExtra: [],
-    }),
-    [videoUrl, fps, ancho, alto, durationInFrames],
-  );
+  /**
+   * Manejo de la tecla ESPACIO: reinicia la reproducción de la preview desde el
+   * principio (`seekTo(0)` + `play()`), previniendo el scroll por defecto de la
+   * página.
+   *
+   * DECISIÓN (evitar capturar el espacio globalmente): el listener NO es global
+   * (no se registra en `window`), sino que vive en el contenedor raíz del
+   * timeline, que es enfocable (`tabIndex={0}`) y escucha `onKeyDown`. Así el
+   * espacio solo reinicia la reproducción cuando el foco está DENTRO del
+   * componente (el usuario lo ha clicado/tabulado), y no interfiere con el resto
+   * de la página cuando el timeline no está activo.
+   */
+  const alTeclaAbajo = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== ' ' && e.code !== 'Space') return;
+    // Evita el scroll por defecto de la página al pulsar espacio.
+    e.preventDefault();
+    const player = playerRef.current;
+    if (!player) return;
+    try {
+      player.seekTo(0);
+      player.play();
+    } catch {
+      // La preview es opcional: un fallo al reiniciar no afecta a la edición.
+    }
+  }, []);
 
   // Ancho del lienzo manteniendo la proporción real del vídeo.
   const anchoPreviewPx = useMemo(() => {
@@ -514,8 +680,12 @@ export default function TimelineSilencios({
 
   return (
     <div
-      className="flex flex-col gap-3 rounded-lg border border-editor-border bg-editor-panel p-4"
+      className="flex flex-col gap-3 rounded-lg border border-editor-border bg-editor-panel p-4 outline-none"
       data-testid="timeline-silencios"
+      // Enfocable para escuchar la barra ESPACIADORA solo cuando el timeline
+      // está activo (ver `alTeclaAbajo`), sin capturar el espacio globalmente.
+      tabIndex={0}
+      onKeyDown={alTeclaAbajo}
     >
       <div>
         <h3 className="text-lg font-medium text-white">
@@ -548,17 +718,24 @@ export default function TimelineSilencios({
       {datos && !cargando && (
         <>
           {/*
-            Previsualización en vivo (nice-to-have, Req 4.1/4.2): se monta el
-            Player solo si hay `video_url`. Se envuelve en `LimiteErrorPreview`
-            para AÍSLAR cualquier fallo de carga/reproducción del vídeo y
-            degradar con elegancia sin bloquear la edición.
+            Previsualización YA RECORTADA en vivo (nice-to-have, Req 4.1/4.2): se
+            monta el Player con la composición `PreviewRecorte`, que reproduce el
+            vídeo unido SIN los tramos rojos (concatenando los segmentos a
+            conservar). Se recalcula EN VIVO al editar los tramos. Se envuelve en
+            `LimiteErrorPreview` para AÍSLAR cualquier fallo de carga/
+            reproducción del vídeo y degradar con elegancia sin bloquear la
+            edición. Debajo del vídeo, una barra de posición refleja el avance de
+            la reproducción.
           */}
-          {videoUrl && (
-            <div data-testid="timeline-preview" className="self-center">
+          {hayPreview && (
+            <div
+              data-testid="timeline-preview"
+              className="flex flex-col items-center self-center"
+            >
               <LimiteErrorPreview>
                 <Player
                   ref={playerRef}
-                  component={ShortVideo}
+                  component={PreviewRecorte}
                   inputProps={inputPreview}
                   durationInFrames={durationInFrames}
                   compositionWidth={ancho}
@@ -568,6 +745,47 @@ export default function TimelineSilencios({
                   style={{ width: anchoPreviewPx, height: ALTO_PREVIEW_PX }}
                 />
               </LimiteErrorPreview>
+              {/*
+                Barra de posición de la reproducción (cut-time). Su relleno es la
+                fracción reproducida `progresoFrac` (0..1). El cursor amarillo
+                sobre la pista (más abajo) marca la posición equivalente en el
+                tiempo ORIGINAL del vídeo unido.
+              */}
+              <div
+                data-testid="timeline-barra-progreso"
+                role="progressbar"
+                aria-label="Posición de la reproducción"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(
+                  Math.min(1, Math.max(0, progresoFrac)) * 100,
+                )}
+                className="mt-2 h-1.5 overflow-hidden rounded bg-gray-700"
+                style={{ width: anchoPreviewPx }}
+              >
+                <div
+                  className="h-full bg-yellow-300 transition-[width] duration-75"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, progresoFrac * 100))}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/*
+            Estado vacío: hay vídeo unido pero NO queda ningún segmento a
+            conservar (el usuario ha marcado todo el vídeo para borrar). Se evita
+            montar el Player (durationInFrames sería degenerado) y se avisa.
+          */}
+          {videoUrl && segmentos.length === 0 && (
+            <div
+              data-testid="timeline-preview-vacia"
+              role="status"
+              className="flex items-center justify-center rounded bg-black/60 p-4 text-center text-sm text-yellow-300"
+            >
+              No queda vídeo que previsualizar: has marcado todo el metraje para
+              borrar. Reduce algún tramo rojo para volver a ver la preview.
             </div>
           )}
 
