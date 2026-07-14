@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.models.job import JobState, JobStatus, PipelineStep, Progress
-from app.models.settings import Ajustes
+from app.models.settings import Ajustes, TramoSilencio
 
 # Conjunto de estados terminales del ciclo de vida de un Job.
 ESTADOS_TERMINALES = frozenset({JobStatus.COMPLETADO, JobStatus.FALLIDO})
@@ -38,6 +38,31 @@ ESTADOS_TERMINALES = frozenset({JobStatus.COMPLETADO, JobStatus.FALLIDO})
 
 def _ahora() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _coaccionar_tramo_silencio(t: object) -> TramoSilencio:
+    """Coacciona un elemento de silencio a :class:`TramoSilencio`.
+
+    El pipeline (``detectar_silencios`` -> ``ejecutar_pipeline`` -> runner)
+    entrega los tramos como TUPLAS ``(inicio_s, fin_s)`` de ``float``, no como
+    instancias :class:`TramoSilencio`. Como Pydantic v2 NO coacciona en la
+    asignación por atributo, guardar esas tuplas tal cual dejaría
+    ``JobState.silencios_detectados`` incumpliendo su tipo declarado
+    (``List[TramoSilencio]``) y haría fallar ``GET /silencios/{id}`` al invocar
+    ``t.model_dump()`` sobre una tupla.
+
+    Esta función normaliza ambos casos y es idempotente:
+
+    * Si ``t`` ya es un :class:`TramoSilencio`, se devuelve tal cual.
+    * Si ``t`` es una tupla/lista ``(inicio, fin)``, se construye el
+      :class:`TramoSilencio` correspondiente convirtiendo a ``float``.
+    """
+    if isinstance(t, TramoSilencio):
+        return t
+    if isinstance(t, (tuple, list)) and len(t) >= 2:
+        return TramoSilencio(inicio_s=float(t[0]), fin_s=float(t[1]))
+    # Último recurso: dejar que Pydantic valide/rechace (p. ej. un dict).
+    return TramoSilencio.model_validate(t)
 
 
 class JobManager:
@@ -201,7 +226,16 @@ class JobManager:
         with self._lock:
             job = self._exigir(job_id)
             job.unido_path = unido_path
-            job.silencios_detectados = list(silencios) if silencios is not None else []
+            # COACCIÓN a ``TramoSilencio``: el pipeline entrega los silencios como
+            # TUPLAS ``(inicio_s, fin_s)`` y Pydantic v2 no coacciona en asignación
+            # por atributo. Normalizamos aquí para que ``silencios_detectados``
+            # cumpla siempre su tipo declarado ``List[TramoSilencio]`` y
+            # ``GET /silencios/{id}`` pueda serializarlos con ``model_dump()``.
+            job.silencios_detectados = (
+                [_coaccionar_tramo_silencio(t) for t in silencios]
+                if silencios is not None
+                else []
+            )
             job.duracion_unido_s = duracion
             job.progreso.estado = JobStatus.ESPERANDO_EDICION_SILENCIOS
             job.progreso.mensaje = "Esperando edición manual de silencios"

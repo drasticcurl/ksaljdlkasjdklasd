@@ -142,8 +142,31 @@ def construir_respuesta_silencios(job: JobState) -> dict:
         "fps": generales.fps,
         "ancho": generales.resolucion.ancho,
         "alto": generales.resolucion.alto,
-        "tramos": [t.model_dump() for t in tramos],
+        # Serialización DEFENSIVA de los tramos: normalmente son ``TramoSilencio``
+        # (tienen ``model_dump``), pero el pipeline puede haberlos dejado como
+        # tuplas/listas ``(inicio_s, fin_s)``. Soportamos ambos casos para que el
+        # endpoint nunca vuelva a romper (``AttributeError`` sobre una tupla),
+        # manteniendo el contrato de salida ``[{"inicio_s":..., "fin_s":...}]``.
+        "tramos": [_serializar_tramo(t) for t in tramos],
     }
+
+
+def _serializar_tramo(t: object) -> dict:
+    """Serializa un tramo a ``{"inicio_s":..., "fin_s":...}`` de forma robusta.
+
+    Acepta tanto instancias :class:`~app.models.settings.TramoSilencio` (u otro
+    modelo con ``model_dump``) como tuplas/listas ``(inicio_s, fin_s)`` que el
+    pipeline pudiera haber entregado. Así ``GET /silencios/{id}`` nunca falla por
+    recibir un tipo inesperado.
+    """
+    if hasattr(t, "model_dump"):
+        return t.model_dump()
+    if isinstance(t, (tuple, list)) and len(t) >= 2:
+        return {"inicio_s": float(t[0]), "fin_s": float(t[1])}
+    # Si ya es un dict con las claves esperadas, se devuelve tal cual.
+    if isinstance(t, dict):
+        return {"inicio_s": float(t["inicio_s"]), "fin_s": float(t["fin_s"])}
+    raise TypeError(f"Tramo de silencio no serializable: {t!r}")
 
 
 @router.get("/silencios/{job_id}")
