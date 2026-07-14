@@ -394,26 +394,79 @@ export default function TimelineSilencios({
   // --- Añadir / eliminar tramos ---
 
   /**
-   * Añade un tramo nuevo con `0 <= inicio < fin <= duracion` (Req 3.3). Se
-   * coloca preferentemente tras el último tramo existente; si no cabe al final,
-   * se ubica al principio. La lista se sanea después (fusión + orden).
+   * Añade un tramo NUEVO en la posición del cursor (`cursorS`), con
+   * `0 <= inicio < fin <= duracion` (Req 2.1, 2.2, 2.3).
+   *
+   * A diferencia de la versión anterior (que colocaba el inicio en el fin del
+   * último tramo y por eso `normalizarTramos` lo fusionaba, agrandándolo e
+   * ignorando el cursor), este manejador:
+   *
+   *   1. Toma la posición del cursor recortada a `[0, duracion]`
+   *      (`inicioDeseado`).
+   *   2. Calcula los HUECOS LIBRES (complemento de los tramos ya saneados en
+   *      `[0, duracion]`, misma idea que {@link segmentosConservar}). Cada hueco
+   *      `[g0, g1]` tiene anchura estrictamente positiva.
+   *   3. Elige el hueco objetivo: el que CONTIENE al cursor; si el cursor cae
+   *      dentro de un tramo, el primer hueco que empiece en/después del cursor
+   *      (o el último si no hay ninguno). Si NO hay huecos, devuelve `prev` sin
+   *      cambios (el timeline está lleno).
+   *   4. Coloca el tramo nuevo en el INTERIOR del hueco, sin compartir borde con
+   *      los tramos vecinos reales: si el borde del hueco corresponde a un tramo
+   *      (no al principio/fin del vídeo) se deja un margen estricto para que
+   *      `normalizarTramos` NO lo fusione (regla de adyacencia `<=`).
+   *
+   * Así el número de tramos aumenta exactamente en 1 y el nuevo bloque aparece
+   * donde está el usuario. `normalizarTramos` y `segmentosConservar` no se tocan.
    */
   const anadirTramo = useCallback(() => {
     if (!editable) return;
     setTramos((prev) => {
       if (duracion <= 0) return prev;
-      const dur = Math.min(DURACION_TRAMO_NUEVO_S, duracion);
-      const ultimo = prev[prev.length - 1];
-      let inicio = ultimo ? ultimo.fin_s : 0;
-      // Si no cabe al final, se coloca al principio (0).
-      if (inicio + dur > duracion) inicio = 0;
-      const nuevo: TramoSilencio = {
-        inicio_s: inicio,
-        fin_s: Math.min(inicio + dur, duracion),
-      };
+
+      // (1) Posición deseada = cursor recortado a [0, duracion].
+      const inicioDeseado = Math.max(0, Math.min(cursorS, duracion));
+
+      // (2) Huecos libres = complemento de los tramos saneados en [0, duracion].
+      const huecos = segmentosConservar(prev, duracion);
+      if (huecos.length === 0) return prev; // Timeline lleno: nada que añadir.
+
+      // (3) Hueco objetivo: el que contiene el cursor; si no (cursor dentro de
+      // un tramo), el primer hueco que empiece en/después del cursor, o el último.
+      const objetivo =
+        huecos.find(
+          (h) => inicioDeseado >= h.inicioS && inicioDeseado <= h.finS,
+        ) ??
+        huecos.find((h) => h.inicioS >= inicioDeseado) ??
+        huecos[huecos.length - 1];
+
+      const g0 = objetivo.inicioS;
+      const g1 = objetivo.finS;
+      // Un borde es "real" (hay un tramo vecino) si no coincide con el
+      // principio (0) ni el fin (duracion) del vídeo.
+      const izquierdaReal = g0 > 0;
+      const derechaReal = g1 < duracion;
+
+      // (4) Colocar en el interior del hueco, con margen estricto en los bordes
+      // que tocan tramos reales para evitar la fusión por adyacencia.
+      const margen = Math.min(1e-3, (g1 - g0) / 4);
+      const lo = izquierdaReal ? g0 + margen : g0;
+      const hi = derechaReal ? g1 - margen : g1;
+      if (hi <= lo) return prev; // Hueco demasiado pequeño para un tramo nuevo.
+
+      let inicio = Math.max(lo, Math.min(inicioDeseado, hi));
+      let fin = Math.min(inicio + DURACION_TRAMO_NUEVO_S, hi);
+      // Si el cursor queda pegado al borde derecho y no cabe la duración,
+      // retroceder el inicio para garantizar duración positiva dentro del hueco.
+      if (fin - inicio <= 0) {
+        inicio = Math.max(lo, hi - DURACION_TRAMO_NUEVO_S);
+        fin = hi;
+      }
+      if (fin - inicio <= 0) return prev; // No hay espacio útil.
+
+      const nuevo: TramoSilencio = { inicio_s: inicio, fin_s: fin };
       return normalizarTramos([...prev, nuevo], duracion);
     });
-  }, [editable, duracion]);
+  }, [editable, duracion, cursorS]);
 
   /**
    * Elimina el tramo indicado sin alterar los demás (Req 3.4).
